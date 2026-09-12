@@ -43,6 +43,18 @@ class DegradationLevel(StrEnum):
     FAILED = "FAILED"
 
 
+class RunStatus(StrEnum):
+    """Externally observable run phase, independent of capability degradation."""
+
+    STARTING = "STARTING"
+    FRAMING = "FRAMING"
+    RESEARCHING = "RESEARCHING"
+    INITIAL_READY = "INITIAL_READY"
+    ENRICHING = "ENRICHING"
+    COMPLETE = "COMPLETE"
+    FAILED = "FAILED"
+
+
 class RuntimeEventType(StrEnum):
     RUN_STARTED = "run_started"
     DISCOVERY_STARTED = "discovery_started"
@@ -219,6 +231,211 @@ class StructuredComparison(BaseModel):
     cluster_labels: dict[str, str] = Field(default_factory=dict)
     comparison_facts: list[ComparisonFact] = Field(default_factory=list)
     available: bool = False
+
+
+class MarketBrief(SessionContext):
+    """V1 name for the structured scan context already represented by SessionContext."""
+
+
+class SearchSeed(BaseModel):
+    seed_id: str = Field(default_factory=lambda: _id("seed"))
+    query: str = Field(min_length=1)
+
+
+class CandidateRecord(BaseModel):
+    candidate_id: str = Field(default_factory=lambda: _id("candidate"))
+    name: str = Field(min_length=1)
+    description: str = ""
+    source_evidence_ids: list[str] = Field(min_length=1)
+
+
+class ResearchBatch(BaseModel):
+    batch_id: str = Field(default_factory=lambda: _id("batch"))
+    seed: SearchSeed
+    evidence: list[EvidenceItem] = Field(default_factory=list)
+    candidates: list[CandidateRecord] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def candidates_reference_batch_evidence(self) -> ResearchBatch:
+        evidence_ids = [item.evidence_id for item in self.evidence]
+        if len(evidence_ids) != len(set(evidence_ids)):
+            raise ValueError("evidence_id values must be unique within a research batch")
+        candidate_ids = [item.candidate_id for item in self.candidates]
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ValueError("candidate_id values must be unique within a research batch")
+        missing = {
+            evidence_id
+            for candidate in self.candidates
+            for evidence_id in candidate.source_evidence_ids
+            if evidence_id not in evidence_ids
+        }
+        if missing:
+            raise ValueError("candidate evidence references must exist in the research batch")
+        return self
+
+
+class CandidateValidation(BaseModel):
+    candidate_id: str = Field(min_length=1)
+    status: Literal["VALID", "REJECTED", "UNCERTAIN"]
+    reason: str | None = None
+    source_evidence_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validation_has_support(self) -> CandidateValidation:
+        if self.status == "VALID" and not self.source_evidence_ids:
+            raise ValueError("VALID candidate validation requires supporting evidence")
+        if self.status == "REJECTED" and not self.reason:
+            raise ValueError("REJECTED candidate validation requires a reason")
+        return self
+
+
+class StructuredProductFacts(BaseModel):
+    product_id: str = Field(min_length=1)
+    positioning: str | None = None
+    target_users: list[str] = Field(default_factory=list)
+    features: list[str] = Field(default_factory=list)
+    source_evidence_ids: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def contains_a_product_fact(self) -> StructuredProductFacts:
+        if not self.positioning and not self.target_users and not self.features:
+            raise ValueError("structured product facts require at least one fact")
+        return self
+
+
+class SemanticProductAnalysis(BaseModel):
+    product_id: str = Field(min_length=1)
+    directness: Literal["DIRECT", "ADJACENT", "UNKNOWN"] = "UNKNOWN"
+    relevance_to_brief: str = Field(min_length=1)
+    differentiators: list[str] = Field(default_factory=list)
+    source_evidence_ids: list[str] = Field(min_length=1)
+
+
+class EnrichedProductProfile(ProductProfile):
+    structured_facts: StructuredProductFacts
+    semantic_analysis: SemanticProductAnalysis | None = None
+
+    @model_validator(mode="after")
+    def enrichment_matches_profile(self) -> EnrichedProductProfile:
+        if self.structured_facts.product_id != self.product_id:
+            raise ValueError("structured_facts product_id must match the profile")
+        if self.semantic_analysis and self.semantic_analysis.product_id != self.product_id:
+            raise ValueError("semantic_analysis product_id must match the profile")
+        referenced = set(self.structured_facts.source_evidence_ids)
+        if self.semantic_analysis:
+            referenced.update(self.semantic_analysis.source_evidence_ids)
+        if not referenced.issubset(self.source_evidence_ids):
+            raise ValueError("product analysis evidence must be present on the profile")
+        return self
+
+
+class MarketModel(BaseModel):
+    products: list[EnrichedProductProfile] = Field(default_factory=list)
+    relations: list[ProductRelation] = Field(default_factory=list)
+    clusters: list[MarketCluster] = Field(default_factory=list)
+    closest_product_ids: list[str] = Field(default_factory=list)
+    degradation_level: DegradationLevel = DegradationLevel.D3
+    summary: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def references_known_products(self) -> MarketModel:
+        product_ids = [product.product_id for product in self.products]
+        if len(product_ids) != len(set(product_ids)):
+            raise ValueError("product_id values must be unique within a market model")
+        known = set(product_ids)
+        referenced = {
+            product_id
+            for relation in self.relations
+            for product_id in (relation.source_product_id, relation.target_product_id)
+        }
+        referenced.update(self.closest_product_ids)
+        referenced.update(
+            product_id for cluster in self.clusters for product_id in cluster.product_ids
+        )
+        if not referenced.issubset(known):
+            raise ValueError("market model references unknown products")
+        return self
+
+
+class MapNode(BaseModel):
+    node_id: str = Field(default_factory=lambda: _id("node"))
+    candidate_id: str = Field(min_length=1)
+    product_id: str | None = None
+    label: str = Field(min_length=1)
+    lifecycle: Literal["CANDIDATE", "ENRICHED", "ANALYZED"] = "CANDIDATE"
+    x: float | None = Field(default=None, ge=0, le=10)
+    y: float | None = Field(default=None, ge=0, le=10)
+    cluster_id: str | None = None
+    source_evidence_ids: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def node_state_is_coherent(self) -> MapNode:
+        if (self.x is None) != (self.y is None):
+            raise ValueError("map node coordinates must be provided together")
+        if self.lifecycle != "CANDIDATE" and self.product_id is None:
+            raise ValueError("enriched or analyzed nodes require product_id")
+        return self
+
+
+class MapCluster(MarketCluster):
+    """Visualization-facing cluster contract reusing MarketCluster fields."""
+
+
+class VisualizationDelta(BaseModel):
+    sequence: int = Field(ge=0)
+    run_status: RunStatus
+    degradation_level: DegradationLevel
+    upsert_nodes: list[MapNode] = Field(default_factory=list)
+    remove_node_ids: list[str] = Field(default_factory=list)
+    upsert_clusters: list[MapCluster] = Field(default_factory=list)
+    remove_cluster_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def upserts_and_removals_do_not_conflict(self) -> VisualizationDelta:
+        upsert_node_ids = {node.node_id for node in self.upsert_nodes}
+        if upsert_node_ids.intersection(self.remove_node_ids):
+            raise ValueError("a map node cannot be upserted and removed in the same delta")
+        upsert_cluster_ids = {cluster.cluster_id for cluster in self.upsert_clusters}
+        if upsert_cluster_ids.intersection(self.remove_cluster_ids):
+            raise ValueError("a map cluster cannot be upserted and removed in the same delta")
+        return self
+
+
+class ComparisonRequest(BaseModel):
+    product_ids: list[str] = Field(min_length=2)
+    dimensions: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def products_are_distinct(self) -> ComparisonRequest:
+        if len(self.product_ids) != len(set(self.product_ids)):
+            raise ValueError("comparison product_ids must be unique")
+        return self
+
+
+class ComparisonView(BaseModel):
+    request: ComparisonRequest
+    products: list[EnrichedProductProfile] = Field(min_length=2)
+    comparison: StructuredComparison
+    summary: str = Field(min_length=1)
+    source_evidence_ids: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def comparison_matches_request(self) -> ComparisonView:
+        product_ids = [product.product_id for product in self.products]
+        if len(product_ids) != len(set(product_ids)):
+            raise ValueError("comparison products must be unique")
+        if set(product_ids) != set(self.request.product_ids):
+            raise ValueError("comparison products must match the request")
+        if not self.comparison.available:
+            raise ValueError("comparison view requires an available structured comparison")
+        product_evidence = {
+            evidence_id
+            for product in self.products
+            for evidence_id in product.source_evidence_ids
+        }
+        if not set(self.source_evidence_ids).issubset(product_evidence):
+            raise ValueError("comparison evidence must be present on compared products")
+        return self
 
 
 class RivalMapState(BaseModel):
