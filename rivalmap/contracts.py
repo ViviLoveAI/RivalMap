@@ -69,6 +69,15 @@ class ResearchEventType(StrEnum):
     RESEARCH_WAVE_COMPLETE = "research_wave_complete"
 
 
+class IntelligenceEventType(StrEnum):
+    ANALYSIS_STARTED = "analysis_started"
+    STRUCTURED_ANALYSIS_COMPLETE = "structured_analysis_complete"
+    SEMANTIC_ANALYSIS_COMPLETE = "semantic_analysis_complete"
+    PRODUCT_PROFILE_READY = "product_profile_ready"
+    ANALYSIS_PARTIAL = "analysis_partial"
+    ANALYSIS_FAILED = "analysis_failed"
+
+
 class RuntimeEventType(StrEnum):
     RUN_STARTED = "run_started"
     DISCOVERY_STARTED = "discovery_started"
@@ -367,29 +376,76 @@ class ResearchEvent(BaseModel):
 
 class StructuredProductFacts(BaseModel):
     product_id: str = Field(min_length=1)
+    product_name: str | None = None
+    company_name: str | None = None
+    canonical_url: HttpUrl | None = None
     positioning: str | None = None
     target_users: list[str] = Field(default_factory=list)
+    product_category: str | None = None
+    primary_use_case: str | None = None
     features: list[str] = Field(default_factory=list)
+    workflow_coverage: list[str] = Field(default_factory=list)
+    pricing_signals: list[str] = Field(default_factory=list)
+    integrations: list[str] = Field(default_factory=list)
+    business_model: str | None = None
     source_evidence_ids: list[str] = Field(min_length=1)
+    field_evidence_ids: dict[str, list[str]] = Field(default_factory=dict)
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    missing_fields: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def contains_a_product_fact(self) -> StructuredProductFacts:
-        if not self.positioning and not self.target_users and not self.features:
+        factual_values = (
+            self.product_name,
+            self.company_name,
+            self.canonical_url,
+            self.positioning,
+            self.target_users,
+            self.product_category,
+            self.primary_use_case,
+            self.features,
+            self.workflow_coverage,
+            self.pricing_signals,
+            self.integrations,
+            self.business_model,
+        )
+        if not any(factual_values):
             raise ValueError("structured product facts require at least one fact")
+        cited = {
+            evidence_id
+            for evidence_ids in self.field_evidence_ids.values()
+            for evidence_id in evidence_ids
+        }
+        if not cited.issubset(self.source_evidence_ids):
+            raise ValueError("field evidence must be included in source_evidence_ids")
         return self
 
 
 class SemanticProductAnalysis(BaseModel):
     product_id: str = Field(min_length=1)
     directness: Literal["DIRECT", "ADJACENT", "UNKNOWN"] = "UNKNOWN"
+    relationship: Literal["DIRECT", "ADJACENT", "ALTERNATIVE", "UNKNOWN"] = "UNKNOWN"
+    problem_solved: str | None = None
+    core_workflow: str | None = None
+    positioning: str | None = None
     relevance_to_brief: str = Field(min_length=1)
     differentiators: list[str] = Field(default_factory=list)
+    uncertainties: list[str] = Field(default_factory=list)
     source_evidence_ids: list[str] = Field(min_length=1)
+    confidence: float = Field(default=0.5, ge=0, le=1)
 
 
 class EnrichedProductProfile(ProductProfile):
+    candidate_id: str | None = None
     structured_facts: StructuredProductFacts
     semantic_analysis: SemanticProductAnalysis | None = None
+    candidate_validation: CandidateValidation | None = None
+    analysis_status: Literal["COMPLETE", "PARTIAL"] = "COMPLETE"
+    field_origins: dict[
+        str,
+        list[Literal["STRUCTURED", "SEMANTIC", "VALIDATION"]],
+    ] = Field(default_factory=dict)
+    uncertainties: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def enrichment_matches_profile(self) -> EnrichedProductProfile:
@@ -397,12 +453,34 @@ class EnrichedProductProfile(ProductProfile):
             raise ValueError("structured_facts product_id must match the profile")
         if self.semantic_analysis and self.semantic_analysis.product_id != self.product_id:
             raise ValueError("semantic_analysis product_id must match the profile")
+        if (
+            self.candidate_id
+            and self.candidate_validation
+            and self.candidate_validation.candidate_id != self.candidate_id
+        ):
+            raise ValueError("candidate_validation must match candidate_id")
         referenced = set(self.structured_facts.source_evidence_ids)
         if self.semantic_analysis:
             referenced.update(self.semantic_analysis.source_evidence_ids)
+        if self.candidate_validation:
+            referenced.update(self.candidate_validation.source_evidence_ids)
         if not referenced.issubset(self.source_evidence_ids):
             raise ValueError("product analysis evidence must be present on the profile")
         return self
+
+
+class AnalysisBudget(BaseModel):
+    max_concurrent_candidates: int = Field(default=4, ge=1, le=16)
+
+
+class IntelligenceEvent(BaseModel):
+    event: IntelligenceEventType
+    candidate_id: str = Field(min_length=1)
+    structured_facts: StructuredProductFacts | None = None
+    semantic_analysis: SemanticProductAnalysis | None = None
+    profile: EnrichedProductProfile | None = None
+    failed_path: Literal["STRUCTURED", "SEMANTIC", "BOTH"] | None = None
+    error_code: Literal["PROVIDER_FAILED", "INVALID_OUTPUT"] | None = None
 
 
 class MarketModel(BaseModel):
