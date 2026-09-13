@@ -28,12 +28,27 @@ class ExaDiscoveryService:
         self.max_results = max_results or (int(configured_max) if configured_max else None)
 
     def discover(self, request: RivalMapRequest) -> list[EvidenceItem]:
+        return self.search(
+            request.query_text,
+            max_results=self.max_results or request.max_results,
+            timeout_seconds=self.timeout_seconds,
+        )
+
+    def search(
+        self,
+        query: str,
+        *,
+        max_results: int,
+        timeout_seconds: float,
+    ) -> list[EvidenceItem]:
+        """Run one independently budgeted Exa query for research fan-out."""
+
         if not self.api_key:
             raise RuntimeError("Exa Search authentication is not configured.")
         payload = {
-            "query": request.query_text,
+            "query": query,
             "type": self.search_type,
-            "numResults": self.max_results or request.max_results,
+            "numResults": max_results,
             "contents": {"highlights": True},
         }
         http_request = urllib.request.Request(
@@ -43,11 +58,11 @@ class ExaDiscoveryService:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(http_request, timeout=self.timeout_seconds) as response:
+            with urllib.request.urlopen(http_request, timeout=timeout_seconds) as response:
                 raw = response.read().decode("utf-8")
         except TimeoutError as exc:
             raise TimeoutError(
-                f"Exa Search 请求超时：{self.timeout_seconds:.0f} 秒内未返回。"
+                f"Exa Search 请求超时：{timeout_seconds:.0f} 秒内未返回。"
             ) from exc
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -55,7 +70,7 @@ class ExaDiscoveryService:
         except urllib.error.URLError as exc:
             if "timed out" in str(exc.reason).casefold():
                 raise TimeoutError(
-                    f"Exa Search 请求超时：{self.timeout_seconds:.0f} 秒内未返回。"
+                    f"Exa Search 请求超时：{timeout_seconds:.0f} 秒内未返回。"
                 ) from exc
             raise RuntimeError(f"Exa Search 暂时不可用：{exc.reason}") from exc
 

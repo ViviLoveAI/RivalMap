@@ -78,6 +78,22 @@ def _round_trip(model):
 def test_v1_contracts_round_trip_with_provenance_and_incremental_state():
     evidence = [_evidence("ev-a", "Alpha"), _evidence("ev-b", "Beta")]
     brief = MarketBrief(product_idea="Interview coach", target_user="job seekers")
+    validations = [
+        CandidateValidation(
+            candidate_id=candidate_id,
+            status="PASS",
+            source_evidence_ids=[evidence_id],
+            is_product_or_company=True,
+            relevance_score=0.8,
+            identity_confidence=0.9,
+            source_quality=SourceQuality.PRIMARY,
+            evidence_coverage=1,
+        )
+        for candidate_id, evidence_id in (
+            ("candidate-a", "ev-a"),
+            ("candidate-b", "ev-b"),
+        )
+    ]
     batch = ResearchBatch(
         batch_id="batch-1",
         seed=SearchSeed(seed_id="seed-1", query="AI interview coach competitors"),
@@ -94,12 +110,9 @@ def test_v1_contracts_round_trip_with_provenance_and_incremental_state():
                 source_evidence_ids=["ev-b"],
             ),
         ],
+        validations=validations,
     )
-    validation = CandidateValidation(
-        candidate_id="candidate-a",
-        status="VALID",
-        source_evidence_ids=["ev-a"],
-    )
+    validation = validations[0]
     profiles = [_profile("alpha", "ev-a"), _profile("beta", "ev-b")]
     market = MarketModel(
         products=profiles,
@@ -191,8 +204,22 @@ def test_run_status_and_degradation_are_independent_dimensions():
             evidence=[_evidence("ev-a", "Alpha")],
             candidates=[CandidateRecord(name="Beta", source_evidence_ids=["missing"])],
         ),
-        lambda: CandidateValidation(candidate_id="candidate-a", status="VALID"),
-        lambda: CandidateValidation(candidate_id="candidate-a", status="REJECTED"),
+        lambda: CandidateValidation(
+            candidate_id="candidate-a",
+            status="PASS",
+            is_product_or_company=True,
+            relevance_score=0.8,
+            identity_confidence=0.9,
+            evidence_coverage=1,
+        ),
+        lambda: CandidateValidation(
+            candidate_id="candidate-a",
+            status="REJECT",
+            is_product_or_company=False,
+            relevance_score=0,
+            identity_confidence=0.2,
+            evidence_coverage=0,
+        ),
         lambda: StructuredProductFacts(product_id="alpha", source_evidence_ids=["ev-a"]),
         lambda: MapNode(
             candidate_id="candidate-a",

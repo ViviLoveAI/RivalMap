@@ -55,6 +55,20 @@ class RunStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class ResearchBranch(StrEnum):
+    DIRECT = "DIRECT"
+    ADJACENT = "ADJACENT"
+    CATEGORY = "CATEGORY"
+    ALTERNATIVES = "ALTERNATIVES"
+
+
+class ResearchEventType(StrEnum):
+    CANDIDATE_FOUND = "candidate_found"
+    CANDIDATE_VALIDATED = "candidate_validated"
+    RESEARCH_BATCH_UPDATED = "research_batch_updated"
+    RESEARCH_WAVE_COMPLETE = "research_wave_complete"
+
+
 class RuntimeEventType(StrEnum):
     RUN_STARTED = "run_started"
     DISCOVERY_STARTED = "discovery_started"
@@ -240,6 +254,7 @@ class MarketBrief(SessionContext):
 class SearchSeed(BaseModel):
     seed_id: str = Field(default_factory=lambda: _id("seed"))
     query: str = Field(min_length=1)
+    branch: ResearchBranch = ResearchBranch.CATEGORY
 
 
 class CandidateRecord(BaseModel):
@@ -247,16 +262,48 @@ class CandidateRecord(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""
     source_evidence_ids: list[str] = Field(min_length=1)
+    canonical_url: HttpUrl | None = None
+    domain: str = ""
+    name_variants: list[str] = Field(default_factory=list)
+
+
+class CandidateValidation(BaseModel):
+    candidate_id: str = Field(min_length=1)
+    status: Literal["PASS", "PROVISIONAL", "REJECT"]
+    reason: str | None = None
+    source_evidence_ids: list[str] = Field(default_factory=list)
+    is_product_or_company: bool
+    relevance_score: float = Field(ge=0, le=1)
+    identity_confidence: float = Field(ge=0, le=1)
+    source_quality: SourceQuality = SourceQuality.UNKNOWN
+    evidence_coverage: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validation_has_support(self) -> CandidateValidation:
+        if self.status == "PASS" and not self.source_evidence_ids:
+            raise ValueError("PASS candidate validation requires supporting evidence")
+        if self.status == "REJECT" and not self.reason:
+            raise ValueError("REJECT candidate validation requires a reason")
+        return self
 
 
 class ResearchBatch(BaseModel):
     batch_id: str = Field(default_factory=lambda: _id("batch"))
     seed: SearchSeed
+    seeds: list[SearchSeed] = Field(default_factory=list)
     evidence: list[EvidenceItem] = Field(default_factory=list)
     candidates: list[CandidateRecord] = Field(default_factory=list)
+    validations: list[CandidateValidation] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def candidates_reference_batch_evidence(self) -> ResearchBatch:
+    def references_are_coherent(self) -> ResearchBatch:
+        if not self.seeds:
+            self.seeds = [self.seed]
+        seed_ids = [item.seed_id for item in self.seeds]
+        if len(seed_ids) != len(set(seed_ids)):
+            raise ValueError("seed_id values must be unique within a research batch")
+        if self.seed.seed_id not in seed_ids:
+            raise ValueError("primary research seed must be included in seeds")
         evidence_ids = [item.evidence_id for item in self.evidence]
         if len(evidence_ids) != len(set(evidence_ids)):
             raise ValueError("evidence_id values must be unique within a research batch")
@@ -271,22 +318,51 @@ class ResearchBatch(BaseModel):
         }
         if missing:
             raise ValueError("candidate evidence references must exist in the research batch")
+        validation_ids = [item.candidate_id for item in self.validations]
+        if len(validation_ids) != len(set(validation_ids)):
+            raise ValueError("candidate validations must be unique within a research batch")
+        if set(validation_ids) != set(candidate_ids):
+            raise ValueError("every research batch candidate requires one validation")
+        if any(validation.status == "REJECT" for validation in self.validations):
+            raise ValueError("rejected candidates cannot enter a research batch")
+        candidate_by_id = {candidate.candidate_id: candidate for candidate in self.candidates}
+        if any(
+            not set(validation.source_evidence_ids).issubset(
+                candidate_by_id[validation.candidate_id].source_evidence_ids
+            )
+            for validation in self.validations
+        ):
+            raise ValueError("candidate validation evidence must exist on the candidate")
         return self
 
 
-class CandidateValidation(BaseModel):
-    candidate_id: str = Field(min_length=1)
-    status: Literal["VALID", "REJECTED", "UNCERTAIN"]
-    reason: str | None = None
-    source_evidence_ids: list[str] = Field(default_factory=list)
+class ResearchBudget(BaseModel):
+    max_concurrent_searches: int = Field(default=4, ge=1, le=16)
+    max_queries_per_wave: int = Field(default=4, ge=1, le=32)
+    max_candidates_per_query: int = Field(default=6, ge=1, le=20)
+    request_timeout_seconds: float = Field(default=8.0, gt=0, le=120)
+    wave_timeout_seconds: float = Field(default=20.0, gt=0, le=300)
 
-    @model_validator(mode="after")
-    def validation_has_support(self) -> CandidateValidation:
-        if self.status == "VALID" and not self.source_evidence_ids:
-            raise ValueError("VALID candidate validation requires supporting evidence")
-        if self.status == "REJECTED" and not self.reason:
-            raise ValueError("REJECTED candidate validation requires a reason")
-        return self
+
+class ResearchSummary(BaseModel):
+    candidates_found: int = Field(default=0, ge=0)
+    passed: int = Field(default=0, ge=0)
+    provisional: int = Field(default=0, ge=0)
+    rejected: int = Field(default=0, ge=0)
+    queries_completed: int = Field(default=0, ge=0)
+    queries_failed: int = Field(default=0, ge=0)
+    search_branches_covered: list[ResearchBranch] = Field(default_factory=list)
+    research_continuing: bool = True
+
+
+class ResearchEvent(BaseModel):
+    event: ResearchEventType
+    summary: ResearchSummary
+    branch: ResearchBranch | None = None
+    candidate: CandidateRecord | None = None
+    validation: CandidateValidation | None = None
+    batch: ResearchBatch | None = None
+    error_code: Literal["TIMEOUT", "SEARCH_FAILED"] | None = None
 
 
 class StructuredProductFacts(BaseModel):
