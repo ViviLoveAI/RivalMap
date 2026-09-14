@@ -100,3 +100,7 @@ ruff check .
 Returns a `RivalMapState`.
 
 `POST /api/runs/stream` returns server-sent events for progress instrumentation.
+
+## License
+
+RivalMap is released under the [MIT License](LICENSE).
