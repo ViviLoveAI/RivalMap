@@ -516,23 +516,71 @@ class MapNode(BaseModel):
     candidate_id: str = Field(min_length=1)
     product_id: str | None = None
     label: str = Field(min_length=1)
-    lifecycle: Literal["CANDIDATE", "ENRICHED", "ANALYZED"] = "CANDIDATE"
+    node_type: Literal["USER_IDEA", "PRODUCT"] = "PRODUCT"
+    lifecycle: Literal["USER_IDEA", "CANDIDATE", "ENRICHED", "ANALYZED"] = "CANDIDATE"
     x: float | None = Field(default=None, ge=0, le=10)
     y: float | None = Field(default=None, ge=0, le=10)
     cluster_id: str | None = None
-    source_evidence_ids: list[str] = Field(min_length=1)
+    source_evidence_ids: list[str] = Field(default_factory=list)
+    relationship: Literal["DIRECT", "ADJACENT", "ALTERNATIVE", "UNKNOWN"] = "UNKNOWN"
+    similarity_to_user: float | None = Field(default=None, ge=0, le=1)
 
     @model_validator(mode="after")
     def node_state_is_coherent(self) -> MapNode:
         if (self.x is None) != (self.y is None):
             raise ValueError("map node coordinates must be provided together")
+        if self.node_type == "USER_IDEA":
+            if self.lifecycle != "USER_IDEA" or self.product_id is not None:
+                raise ValueError("user idea node requires USER_IDEA lifecycle and no product_id")
+            if self.x != 5 or self.y != 5:
+                raise ValueError("user idea node must remain fixed at map center")
+            return self
+        if self.lifecycle == "USER_IDEA":
+            raise ValueError("product nodes cannot use USER_IDEA lifecycle")
+        if not self.source_evidence_ids:
+            raise ValueError("product map nodes require evidence")
         if self.lifecycle != "CANDIDATE" and self.product_id is None:
             raise ValueError("enriched or analyzed nodes require product_id")
         return self
 
 
 class MapCluster(MarketCluster):
-    """Visualization-facing cluster contract reusing MarketCluster fields."""
+    """Visualization-facing cluster with stable label and region metadata."""
+
+    normalized_label: str = "uncategorized"
+    label_source: Literal["STRUCTURED_CATEGORY", "FALLBACK"] = "FALLBACK"
+    centroid_x: float | None = Field(default=None, ge=0, le=10)
+    centroid_y: float | None = Field(default=None, ge=0, le=10)
+    region_radius: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def centroid_is_coherent(self) -> MapCluster:
+        if (self.centroid_x is None) != (self.centroid_y is None):
+            raise ValueError("cluster centroid coordinates must be provided together")
+        return self
+
+
+class SimilarityResult(BaseModel):
+    overall: float = Field(ge=0, le=1)
+    dimension_scores: dict[str, float] = Field(default_factory=dict)
+    relationship: Literal["DIRECT", "ADJACENT", "ALTERNATIVE", "UNKNOWN"] = "UNKNOWN"
+
+
+class FocusRingEntry(BaseModel):
+    product_id: str = Field(min_length=1)
+    rank: int = Field(ge=1)
+    proximity_score: float = Field(ge=0, le=1)
+    reasons: list[
+        Literal[
+            "HIGH_USER_SIMILARITY",
+            "DIRECT_RELATIONSHIP",
+            "ADJACENT_RELATIONSHIP",
+            "ALTERNATIVE_RELATIONSHIP",
+            "STRONG_EVIDENCE",
+            "HIGH_PROFILE_QUALITY",
+            "EVIDENCE_LIMITED",
+        ]
+    ] = Field(default_factory=list)
 
 
 class VisualizationDelta(BaseModel):
@@ -543,6 +591,7 @@ class VisualizationDelta(BaseModel):
     remove_node_ids: list[str] = Field(default_factory=list)
     upsert_clusters: list[MapCluster] = Field(default_factory=list)
     remove_cluster_ids: list[str] = Field(default_factory=list)
+    focus_ring: list[FocusRingEntry] | None = None
 
     @model_validator(mode="after")
     def upserts_and_removals_do_not_conflict(self) -> VisualizationDelta:
@@ -552,6 +601,13 @@ class VisualizationDelta(BaseModel):
         upsert_cluster_ids = {cluster.cluster_id for cluster in self.upsert_clusters}
         if upsert_cluster_ids.intersection(self.remove_cluster_ids):
             raise ValueError("a map cluster cannot be upserted and removed in the same delta")
+        if self.focus_ring is not None:
+            product_ids = [entry.product_id for entry in self.focus_ring]
+            ranks = [entry.rank for entry in self.focus_ring]
+            if len(product_ids) != len(set(product_ids)):
+                raise ValueError("focus ring product_ids must be unique")
+            if ranks != list(range(1, len(ranks) + 1)):
+                raise ValueError("focus ring ranks must be contiguous and ordered")
         return self
 
 
