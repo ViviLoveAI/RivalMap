@@ -422,6 +422,27 @@ class OrchestrationMetrics(BaseModel):
     ] | None = None
 
 
+class ResearchPlan(BaseModel):
+    seeds: list[SearchSeed] = Field(min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def branches_are_unique(self) -> ResearchPlan:
+        branches = [seed.branch for seed in self.seeds]
+        if len(branches) != len(set(branches)):
+            raise ValueError("research plan branches must be unique")
+        return self
+
+
+class LatencyMetrics(BaseModel):
+    framing_ms: float | None = Field(default=None, ge=0)
+    first_research_result_ms: float | None = Field(default=None, ge=0)
+    first_validated_candidate_ms: float | None = Field(default=None, ge=0)
+    first_analyzed_profile_ms: float | None = Field(default=None, ge=0)
+    initial_ready_ms: float | None = Field(default=None, ge=0)
+    first_useful_map_ms: float | None = Field(default=None, ge=0)
+    research_completion_ms: float | None = Field(default=None, ge=0)
+
+
 class PresentationSections(BaseModel):
     closest_rivals: list[str] = Field(default_factory=list)
     your_differentiation: list[str] = Field(default_factory=list)
@@ -699,8 +720,10 @@ class AgentEvent(BaseModel):
     intelligence_event: IntelligenceEvent | None = None
     visualization_delta: VisualizationDelta | None = None
     presentation: PresentationSections | None = None
+    latency_metrics: LatencyMetrics | None = None
     error_code: Literal[
         "RESEARCH_AGENT_FAILED",
+        "FRAMING_AGENT_FAILED",
         "INTELLIGENCE_AGENT_FAILED",
         "PRESENTATION_AGENT_FAILED",
         "ORCHESTRATOR_AGENT_FAILED",

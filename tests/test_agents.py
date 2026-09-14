@@ -403,14 +403,15 @@ class FakeAgent:
 class FakeStrandsFactory:
     def __init__(self):
         self.created = []
+        self.models = []
 
     def function_tool(self, name, description, handler):
         return {"name": name, "description": description, "handler": handler}
 
     def create(self, definition, *, model, tools):
-        assert model == "fake-model"
         agent = FakeAgent(definition, tools)
         self.created.append(agent)
+        self.models.append(model)
         return agent
 
 
@@ -433,6 +434,7 @@ def test_strands_hierarchy_uses_specialists_as_bounded_tools():
         PRESENTATION_DEFINITION,
         ORCHESTRATOR_DEFINITION,
     ]
+    assert factory.models == ["fake-model"] * 5
     assert [tool["agent_tool"] for tool in agents.orchestrator.tools] == [
         "invoke_research_agent",
         "invoke_market_intelligence_agent",
@@ -446,6 +448,32 @@ def test_strands_hierarchy_uses_specialists_as_bounded_tools():
         "prepare_map_presentation"
     ]
     assert agents.decision_maker.agent is agents.orchestrator
+
+
+def test_strands_builder_assigns_role_specific_models():
+    factory = FakeStrandsFactory()
+    models = {
+        "framing": "fast-framing",
+        "orchestrator": "reasoning-orchestrator",
+        "research": "fast-research",
+        "intelligence": "deep-intelligence",
+        "presentation": "balanced-presentation",
+    }
+
+    build_strands_agent_set(
+        model=models,
+        research=ResearchAgent.__new__(ResearchAgent),
+        intelligence=MarketIntelligenceAgent(MarketIntelligenceService()),
+        factory=factory,
+    )
+
+    assert factory.models == [
+        "fast-framing",
+        "fast-research",
+        "deep-intelligence",
+        "balanced-presentation",
+        "reasoning-orchestrator",
+    ]
 
 
 def test_strands_builder_requires_explicit_model_provider():

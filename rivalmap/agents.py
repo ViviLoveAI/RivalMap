@@ -61,7 +61,8 @@ RESEARCH_DEFINITION = AgentDefinition(
     description="Runs bounded parallel market research using RivalMap's research service.",
     system_prompt=(
         "Choose only bounded direct, adjacent, category, or alternative research branches. "
-        "Use the supplied research tool; do not validate or analyze products yourself."
+        "Return a typed plan for planning requests; use the supplied tool only for explicit "
+        "execution requests. Do not validate or analyze products yourself."
     ),
     tool_names=("run_parallel_research",),
 )
@@ -69,7 +70,8 @@ INTELLIGENCE_DEFINITION = AgentDefinition(
     name="market_intelligence_agent",
     description="Interprets admitted candidate evidence using RivalMap market intelligence.",
     system_prompt=(
-        "Use the supplied intelligence tool for admitted candidates. Preserve evidence and do "
+        "Return typed structured or semantic analysis for individual analysis requests; use the "
+        "supplied intelligence tool only for explicit batch execution. Preserve evidence and do "
         "not perform similarity, clustering, layout, or Focus Ring selection."
     ),
     tool_names=("analyze_research_batch",),
@@ -78,8 +80,9 @@ PRESENTATION_DEFINITION = AgentDefinition(
     name="presentation_agent",
     description="Prepares labels and concise interpretation from an existing market map.",
     system_prompt=(
-        "Use only supplied map data. Never invent or change coordinates, similarity values, "
-        "clusters, or Focus Ring membership. Return concise presentation metadata."
+        "Return typed metadata for presentation-generation requests; use the supplied tool only "
+        "for explicit existing-map packaging. Never invent or change coordinates, similarity "
+        "values, clusters, or Focus Ring membership."
     ),
     tool_names=("prepare_map_presentation",),
 )
@@ -185,9 +188,9 @@ class MarketFramingAgent:
 
 
 class ResearchAgent:
-    def __init__(self, service: ParallelResearchService) -> None:
+    def __init__(self, service: ParallelResearchService, *, planner: Any | None = None) -> None:
         self.service = service
-        self.planner = DeterministicResearchPlanner()
+        self.planner = planner or DeterministicResearchPlanner()
 
     def stream(
         self,
@@ -203,7 +206,11 @@ class ResearchAgent:
             for seed in self.planner.plan(brief):
                 if seed.branch not in selected:
                     continue
-                query = f"{seed.query} targeted follow-up wave {wave}"
+                query = (
+                    seed.query
+                    if wave == 1
+                    else f"{seed.query} targeted follow-up wave {wave}"
+                )
                 digest = hashlib.sha256(f"{seed.branch.value}:{query}".encode()).hexdigest()[:16]
                 seeds.append(
                     SearchSeed(seed_id=f"seed_{digest}", query=query, branch=seed.branch)
@@ -814,6 +821,13 @@ def build_strands_agent_set(
     factory = factory or NativeStrandsFactory()
     presentation = presentation or PresentationAgent()
 
+    def role_model(role: str) -> Any:
+        if isinstance(model, dict):
+            if role not in model:
+                raise ValueError(f"missing explicit Strands model for {role}")
+            return model[role]
+        return model
+
     def update_market_brief(
         product_idea: str,
         problem: str = "",
@@ -890,18 +904,22 @@ def build_strands_agent_set(
     )
     framing_agent = factory.create(
         MARKET_FRAMING_DEFINITION,
-        model=model,
+        model=role_model("framing"),
         tools=[framing_tool],
     )
-    research_agent = factory.create(RESEARCH_DEFINITION, model=model, tools=[research_tool])
+    research_agent = factory.create(
+        RESEARCH_DEFINITION,
+        model=role_model("research"),
+        tools=[research_tool],
+    )
     intelligence_agent = factory.create(
         INTELLIGENCE_DEFINITION,
-        model=model,
+        model=role_model("intelligence"),
         tools=[intelligence_tool],
     )
     presentation_agent = factory.create(
         PRESENTATION_DEFINITION,
-        model=model,
+        model=role_model("presentation"),
         tools=[presentation_tool],
     )
     specialist_tools = [
@@ -920,7 +938,7 @@ def build_strands_agent_set(
     ]
     orchestrator = factory.create(
         ORCHESTRATOR_DEFINITION,
-        model=model,
+        model=role_model("orchestrator"),
         tools=specialist_tools,
     )
     return StrandsAgentSet(
