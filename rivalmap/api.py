@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
 import json
+import uuid
 from collections.abc import Callable, Iterator
 from typing import Any, Protocol
 
@@ -10,7 +12,15 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .contracts import AgentEvent, RivalMapRequest, RivalMapState, RuntimeEvent, RuntimeEventType
+from .contracts import (
+    AgentEvent,
+    MarketBrief,
+    RivalMapRequest,
+    RivalMapState,
+    RuntimeEvent,
+    RuntimeEventType,
+)
+from .refinement import ActiveRunRegistry, MarketBriefRefinement
 from .runtime import RivalMapRuntime, event_payload
 
 
@@ -37,6 +47,8 @@ class ProgressiveRunner(Protocol):
         *,
         target_user: str | None,
         problem: str | None,
+        exclusions: list[str] | None = None,
+        brief_provider: Callable[[], MarketBrief] | None = None,
     ) -> Iterator[AgentEvent]: ...
 
 
@@ -50,10 +62,12 @@ def create_router(
     runtime: RivalMapRuntime | None = None,
     *,
     progressive_factory: Callable[[], ProgressiveRunner] | None = None,
+    active_run_registry: ActiveRunRegistry | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["RivalMap"])
     runtime = runtime or RivalMapRuntime()
     progressive_factory = progressive_factory or _build_progressive_runner
+    active_runs = active_run_registry or ActiveRunRegistry()
 
     @router.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -84,13 +98,34 @@ def create_router(
 
     @router.post("/v1/runs/stream")
     def progressive_stream(request: RivalMapRequest) -> StreamingResponse:
+        run_id = uuid.uuid4().hex
+        brief_state = active_runs.add(
+            run_id,
+            MarketBrief(
+                product_idea=request.idea,
+                target_user=request.target_user,
+                problem=request.problem,
+                exclusions=request.exclusions,
+            ),
+        )
+
         def generate() -> Iterator[str]:
             try:
                 runner = progressive_factory()
+                parameters = inspect.signature(runner.stream).parameters
+                extra = (
+                    {
+                        "exclusions": request.exclusions,
+                        "brief_provider": brief_state.get,
+                    }
+                    if "brief_provider" in parameters
+                    else {}
+                )
                 for event in runner.stream(
                     request.idea,
                     target_user=request.target_user,
                     problem=request.problem,
+                    **extra,
                 ):
                     yield _agent_sse(event)
             except Exception:  # noqa: BLE001 - public stream remains sanitized
@@ -101,11 +136,25 @@ def create_router(
                     "error_code": "PROGRESSIVE_RUN_FAILED",
                 }
                 yield f"event: run_failed\ndata: {json.dumps(payload)}\n\n"
+            finally:
+                active_runs.remove(run_id)
 
         return StreamingResponse(
             generate(),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "X-RivalMap-Run-Id": run_id,
+                "Access-Control-Expose-Headers": "X-RivalMap-Run-Id",
+            },
         )
+
+    @router.post("/v1/runs/{run_id}/refine", response_model=MarketBrief)
+    def refine_run(run_id: str, refinement: MarketBriefRefinement) -> MarketBrief:
+        brief_state = active_runs.get(run_id)
+        if brief_state is None:
+            raise HTTPException(status_code=404, detail="Active RivalMap run not found")
+        return brief_state.refine(refinement)
 
     return router

@@ -74,6 +74,8 @@ curl http://127.0.0.1:8876/health
 Open `http://127.0.0.1:8876/` for the progressive RivalMap frontend. It consumes
 the Bedrock vertical slice through `POST /api/v1/runs/stream`; the original
 `POST /api/runs` and `POST /api/runs/stream` contracts remain unchanged.
+Use `http://127.0.0.1:8876/?demo=1` for the real-provider hackathon demo flow.
+The completed map can be exported directly from the browser as SVG or PNG.
 
 Run tests:
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
@@ -69,12 +69,15 @@ class BedrockVerticalSlice:
         *,
         target_user: str | None,
         problem: str | None,
+        exclusions: list[str] | None = None,
+        brief_provider: Callable[[], MarketBrief] | None = None,
     ) -> Iterator[AgentEvent]:
         latency = _LatencyRecorder.start()
         input_brief = MarketBrief(
             product_idea=product_idea,
             target_user=target_user,
             problem=problem,
+            exclusions=exclusions or [],
         )
         yield AgentEvent(
             event=AgentEventType.FRAMING_STARTED,
@@ -114,7 +117,27 @@ class BedrockVerticalSlice:
             latency_metrics=latency.metrics.model_copy(deep=True),
         )
 
-        for event in self.orchestrator.stream(brief):
+        orchestration_provider = None
+        if brief_provider is not None:
+            framed_brief = brief
+
+            def orchestration_provider() -> MarketBrief:
+                latest = brief_provider()
+                return framed_brief.model_copy(
+                    update={
+                        "exclusions": latest.exclusions,
+                        "competitive_scope": latest.competitive_scope,
+                        "priority_dimension": latest.priority_dimension,
+                    }
+                )
+
+            brief = orchestration_provider()
+        orchestration = (
+            self.orchestrator.stream(brief, brief_provider=orchestration_provider)
+            if orchestration_provider is not None
+            else self.orchestrator.stream(brief)
+        )
+        for event in orchestration:
             if event.research_event is not None:
                 if event.research_event.event in {
                     ResearchEventType.CANDIDATE_FOUND,

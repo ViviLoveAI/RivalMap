@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="RivalMap — see the competitive market around your product idea." />
     <title>RivalMap</title>
-    <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20260914-9" />
   </head>
   <body>
     <main class="app-shell">
@@ -14,17 +14,29 @@
           <span class="brand-mark">R</span>
           <span>RivalMap</span>
         </a>
-        <form id="idea-form" class="idea-form">
-          <label class="sr-only" for="idea">Product idea</label>
-          <input id="idea" name="idea" required value="AI interview coaching platform" />
-          <label class="sr-only" for="target-user">Target customer</label>
-          <input id="target-user" name="target_user" placeholder="Target customer" value="job seekers" />
-          <label class="sr-only" for="problem">Problem</label>
-          <input id="problem" name="problem" placeholder="Problem to solve" value="practice interviews and receive feedback" />
-          <button type="submit">Map the market <span aria-hidden="true">→</span></button>
-        </form>
+        <div class="top-context">
+          <span id="brief-title">New market exploration</span>
+          <small id="brief-context">Answer a few short questions to begin.</small>
+        </div>
+        <div class="top-actions">
+          <button id="demo-mode" class="text-button" type="button">Run demo</button>
+          <button id="new-map" class="text-button" type="button">New map</button>
+          <button id="presentation-mode" class="presentation-button" type="button">Presentation</button>
+          <div class="export-actions">
+            <span>Export ↓</span>
+            <button id="export-svg" disabled>SVG</button>
+            <button id="export-png" disabled>PNG</button>
+          </div>
+        </div>
         <div id="run-status" class="status-pill" data-tone="searching">Ready</div>
       </header>
+
+      <div class="presentation-downloads" aria-label="Presentation downloads">
+        <span>Download</span>
+        <button id="presentation-export-png">PNG</button>
+        <button id="presentation-export-svg">SVG</button>
+        <button id="exit-presentation" class="exit-presentation">Exit</button>
+      </div>
 
       <section class="workspace">
         <aside class="activity-panel">
@@ -33,9 +45,25 @@
             <h1>From idea to market shape.</h1>
             <p class="subtle">Watch the map form as RivalMap researches and interprets your category.</p>
           </div>
+          <section id="framing-card" class="framing-card" aria-live="polite">
+            <div class="framing-progress" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+            </div>
+            <p class="eyebrow">Market framing</p>
+            <h3 id="framing-question">What are you building?</h3>
+            <form id="framing-form">
+              <label class="sr-only" for="framing-answer">Your answer</label>
+              <input id="framing-answer" autocomplete="off" required placeholder="e.g. AI interview coaching platform" />
+              <button type="submit">Continue <span aria-hidden="true">→</span></button>
+            </form>
+            <div class="framing-footer">
+              <span id="research-running" class="research-running" hidden><i></i>Research is already running</span>
+              <button id="skip-question" class="text-button" hidden>Skip</button>
+            </div>
+          </section>
           <ol id="activity-list" class="activity-list" aria-live="polite"></ol>
           <div class="coverage-card">
-            <span>Relevant products</span>
+            <span>Validated products</span>
             <strong id="candidate-count">0</strong>
             <div class="coverage-track"><span id="coverage-fill"></span></div>
           </div>
@@ -60,6 +88,14 @@
                   <stop offset="0" stop-color="#ff6b45" stop-opacity="0.2" />
                   <stop offset="1" stop-color="#ff6b45" stop-opacity="0" />
                 </radialGradient>
+                <radialGradient id="focus-zone-gradient">
+                  <stop offset="0" stop-color="#eff5f3" stop-opacity="0.96" />
+                  <stop offset="0.72" stop-color="#eff5f3" stop-opacity="0.72" />
+                  <stop offset="1" stop-color="#eff5f3" stop-opacity="0.18" />
+                </radialGradient>
+                <filter id="zone-blur" x="-25%" y="-25%" width="150%" height="150%">
+                  <feGaussianBlur stdDeviation="13" />
+                </filter>
                 <filter id="soft-shadow" x="-50%" y="-50%" width="200%" height="200%">
                   <feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity="0.14" />
                 </filter>
@@ -72,10 +108,10 @@
                 <line x1="80" y1="350" x2="920" y2="350"></line>
               </g>
               <g id="cluster-layer"></g>
-              <g id="focus-layer">
-                <circle id="focus-glow" cx="500" cy="350" r="0"></circle>
-                <circle id="focus-ring" cx="500" cy="350" r="0"></circle>
-                <text id="focus-label" x="500" y="350">Closest rivals</text>
+              <g id="focus-layer" data-state="empty">
+                <path id="focus-glow"></path>
+                <path id="focus-ring" pathLength="1"></path>
+                <text id="focus-label" x="500" y="350">Your closest competitive space</text>
               </g>
               <g id="node-layer"></g>
             </svg>
@@ -84,15 +120,18 @@
               <strong>Understanding your market...</strong>
               <small>Competitors will appear as they are validated.</small>
             </div>
+            <button id="replay-focus" class="replay-focus" hidden>Replay space reveal</button>
           </div>
         </section>
       </section>
 
+      <p class="presentation-position">Your competitive position</p>
       <section class="insight-strip" aria-label="Market interpretation">
         <article><p class="eyebrow">Closest Rivals</p><div id="closest-rivals"><p class="placeholder">Waiting for the Focus Ring.</p></div></article>
         <article><p class="eyebrow">Your Differentiation</p><div id="differentiation"><p class="placeholder">Positioning signals will appear here.</p></div></article>
         <article><p class="eyebrow">Opportunity Around You</p><div id="opportunity"><p class="placeholder">Whitespace will emerge as the map fills.</p></div></article>
       </section>
+      <footer id="presentation-footer" class="presentation-footer">Evidence-backed competitive intelligence</footer>
     </main>
 
     <aside id="detail-panel" class="detail-panel" aria-hidden="true">
@@ -112,7 +151,10 @@
       </div>
       <div id="compare-empty" class="compare-empty">Open a product and add 2–4 nodes to compare.</div>
       <div id="compare-table-wrap" class="compare-table-wrap"></div>
+      <div id="compare-synthesis" class="compare-synthesis"></div>
     </section>
+
+    <div id="export-toast" class="export-toast" role="status" aria-live="polite">Export ready</div>
 
     <script type="module" src="/assets/app.js"></script>
   </body>

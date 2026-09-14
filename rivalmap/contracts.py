@@ -273,6 +273,9 @@ class StructuredComparison(BaseModel):
 class MarketBrief(SessionContext):
     """V1 name for the structured scan context already represented by SessionContext."""
 
+    competitive_scope: str | None = None
+    priority_dimension: str | None = None
+
 
 class SearchSeed(BaseModel):
     seed_id: str = Field(default_factory=lambda: _id("seed"))
@@ -425,6 +428,7 @@ class OrchestrationMetrics(BaseModel):
         "RESEARCH_BUDGET_EXHAUSTED",
         "TIME_BUDGET_EXHAUSTED",
     ] | None = None
+    market_brief: MarketBrief | None = None
 
 
 class ResearchPlan(BaseModel):

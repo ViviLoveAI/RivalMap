@@ -7,10 +7,12 @@ from rivalmap.contracts import (
     AgentEventType,
     EvidenceItem,
     EvidenceRelation,
+    MarketBrief,
     RunStatus,
     Source,
     SourceQuality,
 )
+from rivalmap.refinement import ActiveRunRegistry
 from rivalmap.runtime import RivalMapRuntime
 
 
@@ -96,6 +98,46 @@ def test_progressive_stream_exposes_safe_agent_events_without_eager_provider_sta
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["x-rivalmap-run-id"]
     assert "event: framing_started" in response.text
     assert "event: orchestration_complete" in response.text
     assert "raw_trace" not in response.text
+
+
+def test_active_run_refinement_only_updates_whitelisted_market_brief_fields():
+    registry = ActiveRunRegistry()
+    registry.add(
+        "run-1",
+        MarketBrief(
+            product_idea="AI interview practice",
+            target_user="job seekers",
+            problem="practice interviews",
+        ),
+    )
+    app = FastAPI()
+    app.include_router(
+        create_router(
+            RivalMapRuntime(discovery=FakeDiscovery()),
+            progressive_factory=FakeProgressiveRunner,
+            active_run_registry=registry,
+        )
+    )
+
+    response = TestClient(app).post(
+        "/api/v1/runs/run-1/refine",
+        json={
+            "exclusions": ["recruiting suites"],
+            "competitive_scope": "consumer interview coaching",
+            "priority_dimension": "feedback quality",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["exclusions"] == ["recruiting suites"]
+    assert response.json()["competitive_scope"] == "consumer interview coaching"
+    assert response.json()["priority_dimension"] == "feedback quality"
+    rejected = TestClient(app).post(
+        "/api/v1/runs/run-1/refine",
+        json={"problem": "replace the original problem"},
+    )
+    assert rejected.status_code == 422

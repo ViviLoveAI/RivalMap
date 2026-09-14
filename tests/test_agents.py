@@ -286,6 +286,46 @@ def test_orchestrator_requests_targeted_enrichment_for_missing_coverage():
     assert len(research.calls) == 2
 
 
+def test_next_orchestrator_decision_and_wave_read_latest_market_brief():
+    current = {"brief": _brief()}
+
+    class RefiningResearchAgent(FakeResearchAgent):
+        def stream(self, brief, *, branches=None, wave=1):
+            yield from super().stream(brief, branches=branches, wave=wave)
+            if wave == 1:
+                current["brief"] = current["brief"].model_copy(
+                    update={
+                        "exclusions": ["recruiting suites"],
+                        "competitive_scope": "consumer coaching",
+                        "priority_dimension": "feedback quality",
+                    }
+                )
+
+    research = RefiningResearchAgent(
+        [
+            (_batch("alpha"), _summary(passed=1, branches=[ResearchBranch.DIRECT])),
+            (_batch("beta"), _summary(passed=2, branches=list(ResearchBranch))),
+        ]
+    )
+    decisions = [
+        _broad(),
+        OrchestratorDecision(
+            action="FILL_GAP",
+            target_branches=[ResearchBranch.ADJACENT],
+        ),
+        _complete(),
+    ]
+    orchestrator = _orchestrator(research, decisions=decisions)
+
+    list(orchestrator.stream(_brief(), brief_provider=lambda: current["brief"]))
+
+    reviewed = orchestrator.test_decision_maker.calls[1].market_brief
+    assert reviewed.exclusions == ["recruiting suites"]
+    assert reviewed.competitive_scope == "consumer coaching"
+    assert reviewed.priority_dimension == "feedback quality"
+    assert research.calls[1][0] == reviewed
+
+
 def test_candidate_map_flow_does_not_wait_for_research_completion():
     research = FakeResearchAgent(
         [(_batch("alpha"), _summary(passed=1, branches=list(ResearchBranch)))],

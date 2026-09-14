@@ -357,7 +357,12 @@ class ProgressiveOrchestratorAgent:
         self.budget = budget or OrchestrationBudget()
         self.hard_budget_guard = hard_budget_guard or HardBudgetGuard()
 
-    def stream(self, brief: MarketBrief) -> Iterator[AgentEvent]:
+    def stream(
+        self,
+        brief: MarketBrief,
+        *,
+        brief_provider: Callable[[], MarketBrief] | None = None,
+    ) -> Iterator[AgentEvent]:
         started = time.monotonic()
         output: queue.Queue[tuple[str, Any]] = queue.Queue()
         executor = ThreadPoolExecutor(
@@ -383,9 +388,12 @@ class ProgressiveOrchestratorAgent:
         aggregate = ResearchSummary(research_continuing=True)
         last_delta: VisualizationDelta | None = None
 
+        def current_brief() -> MarketBrief:
+            return brief_provider() if brief_provider is not None else brief
+
         def research_worker(branches: Sequence[ResearchBranch] | None, wave: int) -> None:
             try:
-                for event in self.research.stream(brief, branches=branches, wave=wave):
+                for event in self.research.stream(current_brief(), branches=branches, wave=wave):
                     output.put(("research", event))
             except Exception:  # noqa: BLE001 - contain specialist failure
                 output.put(("research_failure", None))
@@ -394,13 +402,14 @@ class ProgressiveOrchestratorAgent:
 
         def analysis_worker(item: CandidateIntelligenceInput) -> None:
             try:
-                for event in self.intelligence.stream_candidate(brief, item):
+                for event in self.intelligence.stream_candidate(current_brief(), item):
                     output.put(("intelligence", event))
             except Exception:  # noqa: BLE001 - contain specialist failure
                 output.put(("intelligence_failure", item.candidate.candidate_id))
 
         def metrics() -> OrchestrationMetrics:
             elapsed = time.monotonic() - started
+            latest_brief = current_brief()
             remaining_waves = max(self.budget.max_research_waves - waves_started, 0)
             remaining_enrichments = max(
                 self.budget.max_targeted_enrichments - enrichments_requested,
@@ -415,7 +424,7 @@ class ProgressiveOrchestratorAgent:
             new_work_expired = elapsed >= self.budget.new_work_deadline_seconds
             return OrchestrationMetrics(
                 research_summary=aggregate,
-                framing_sufficient=bool(brief.problem and brief.target_user),
+                framing_sufficient=bool(latest_brief.problem and latest_brief.target_user),
                 near_field_quality=round(min(near_field_quality, 1.0), 6),
                 target_passed_candidates=self.budget.minimum_passed_candidates,
                 target_branches_covered=self.budget.minimum_branches_covered,
@@ -435,6 +444,7 @@ class ProgressiveOrchestratorAgent:
                     if remaining_waves == 0
                     else None
                 ),
+                market_brief=latest_brief,
             )
 
         def decision_worker(snapshot: OrchestrationMetrics) -> None:
