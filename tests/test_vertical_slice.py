@@ -4,6 +4,7 @@ from rivalmap.contracts import (
     DegradationLevel,
     IntelligenceEvent,
     IntelligenceEventType,
+    MapNode,
     MarketBrief,
     OrchestratorDecision,
     ResearchEvent,
@@ -63,10 +64,32 @@ class FakeProgressiveOrchestrator:
         )
         yield AgentEvent(
             event=AgentEventType.PRESENTATION_UPDATE,
+            run_status=RunStatus.ENRICHING,
+            message="First competitor map renderable.",
+            visualization_delta=VisualizationDelta(
+                sequence=0,
+                run_status=RunStatus.ENRICHING,
+                degradation_level=DegradationLevel.D3,
+                upsert_nodes=[
+                    MapNode(
+                        node_id="node-alpha",
+                        candidate_id="candidate-alpha",
+                        product_id="product-alpha",
+                        label="Alpha",
+                        lifecycle="ANALYZED",
+                        x=4,
+                        y=4,
+                        source_evidence_ids=["ev-alpha"],
+                    )
+                ],
+            ),
+        )
+        yield AgentEvent(
+            event=AgentEventType.PRESENTATION_UPDATE,
             run_status=RunStatus.INITIAL_READY,
             message="Initial map ready.",
             visualization_delta=VisualizationDelta(
-                sequence=0,
+                sequence=1,
                 run_status=RunStatus.INITIAL_READY,
                 degradation_level=DegradationLevel.D2,
             ),
@@ -89,17 +112,24 @@ def test_vertical_slice_records_safe_milestones_and_streams_map_before_completio
         )
     )
     event_types = [event.event for event in events]
-    map_index = event_types.index(AgentEventType.PRESENTATION_UPDATE)
+    map_indices = [
+        index
+        for index, event_type in enumerate(event_types)
+        if event_type == AgentEventType.PRESENTATION_UPDATE
+    ]
     completion_index = event_types.index(AgentEventType.COVERAGE_REVIEWED)
     metrics = events[-1].latency_metrics
 
-    assert map_index < completion_index
+    assert map_indices[0] < completion_index
     assert metrics.framing_ms is not None
     assert metrics.first_research_result_ms is not None
     assert metrics.first_validated_candidate_ms is not None
     assert metrics.first_analyzed_profile_ms is not None
+    assert metrics.first_renderable_map_ms is not None
     assert metrics.first_useful_map_ms is not None
-    assert metrics.initial_ready_ms is not None
+    assert events[map_indices[0]].latency_metrics.first_renderable_map_ms is not None
+    assert events[map_indices[0]].latency_metrics.first_useful_map_ms is None
+    assert events[map_indices[1]].latency_metrics.first_useful_map_ms is not None
     assert metrics.research_completion_ms is not None
     assert "chain_of_thought" not in events[-1].model_dump_json()
 

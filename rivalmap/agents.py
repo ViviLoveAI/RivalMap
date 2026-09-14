@@ -376,6 +376,7 @@ class ProgressiveOrchestratorAgent:
         research_finished = False
         decision_running = False
         orchestration_failed = False
+        new_work_closed = False
         waves_started = 0
         enrichments_requested = 0
         completed_summary = ResearchSummary(research_continuing=True)
@@ -411,7 +412,7 @@ class ProgressiveOrchestratorAgent:
                 if focus_ring
                 else 0.0
             )
-            timed_out = elapsed >= self.budget.orchestration_timeout_seconds
+            new_work_expired = elapsed >= self.budget.new_work_deadline_seconds
             return OrchestrationMetrics(
                 research_summary=aggregate,
                 framing_sufficient=bool(brief.problem and brief.target_user),
@@ -426,10 +427,10 @@ class ProgressiveOrchestratorAgent:
                     for branch in ResearchBranch
                     if branch not in aggregate.search_branches_covered
                 ],
-                hard_stop=timed_out or remaining_waves == 0,
+                hard_stop=new_work_expired or remaining_waves == 0,
                 hard_stop_code=(
                     "TIME_BUDGET_EXHAUSTED"
-                    if timed_out
+                    if new_work_expired
                     else "RESEARCH_BUDGET_EXHAUSTED"
                     if remaining_waves == 0
                     else None
@@ -443,11 +444,18 @@ class ProgressiveOrchestratorAgent:
             except Exception:  # noqa: BLE001 - contain model/agent failure
                 output.put(("decision_failure", snapshot))
 
-        def start_wave(branches: Sequence[ResearchBranch] | None) -> None:
-            nonlocal research_running, waves_started
+        def start_wave(branches: Sequence[ResearchBranch] | None) -> bool:
+            nonlocal new_work_closed, research_running, waves_started
+            if (
+                time.monotonic() - started >= self.budget.new_work_deadline_seconds
+                or waves_started >= self.budget.max_research_waves
+            ):
+                new_work_closed = True
+                return False
             waves_started += 1
             research_running = True
             futures.add(executor.submit(research_worker, branches, waves_started))
+            return True
 
         def start_analyses() -> None:
             while pending_inputs and len(active_candidates) < self.budget.max_active_analyses:
@@ -476,8 +484,9 @@ class ProgressiveOrchestratorAgent:
                 research_summary=aggregate.model_copy(update={"research_continuing": False}),
             )
             return
+        current_metrics = metrics()
         initial_decision = self.hard_budget_guard.enforce(
-            initial_metrics,
+            current_metrics,
             initial_proposed,
         )
         yield AgentEvent(
@@ -485,23 +494,24 @@ class ProgressiveOrchestratorAgent:
             run_status=RunStatus.STARTING,
             message=f"Strands Orchestrator selected {initial_decision.action}.",
             research_summary=aggregate,
-            orchestration_metrics=initial_metrics,
+            orchestration_metrics=current_metrics,
             orchestrator_decision=initial_decision,
         )
         if initial_decision.action == "COMPLETE":
             research_finished = True
-        else:
+        elif start_wave(initial_decision.target_branches):
             if initial_decision.action in {"STRENGTHEN_NEAR_FIELD", "FILL_GAP"}:
                 enrichments_requested += 1
-            start_wave(initial_decision.target_branches)
             yield AgentEvent(
                 event=AgentEventType.RESEARCH_REQUESTED,
                 run_status=RunStatus.RESEARCHING,
                 message="Strands Orchestrator requested initial research.",
                 market_brief=brief,
-                orchestration_metrics=initial_metrics,
+                orchestration_metrics=current_metrics,
                 orchestrator_decision=initial_decision,
             )
+        else:
+            research_finished = True
 
         try:
             while (
@@ -511,8 +521,23 @@ class ProgressiveOrchestratorAgent:
                 or active_candidates
                 or pending_inputs
             ):
+                futures = {future for future in futures if not future.done()}
+                if (
+                    research_finished
+                    and not active_candidates
+                    and not pending_inputs
+                    and not futures
+                ):
+                    research_running = False
+                    decision_running = False
+                    break
+
                 elapsed = time.monotonic() - started
-                if elapsed >= self.budget.orchestration_timeout_seconds:
+                if (
+                    elapsed >= self.budget.new_work_deadline_seconds
+                    and not new_work_closed
+                ):
+                    new_work_closed = True
                     snapshot = metrics()
                     decision = self.hard_budget_guard.enforce(
                         snapshot,
@@ -521,23 +546,49 @@ class ProgressiveOrchestratorAgent:
                     yield AgentEvent(
                         event=AgentEventType.COVERAGE_REVIEWED,
                         run_status=RunStatus.ENRICHING if profiles else RunStatus.RESEARCHING,
-                        message="Coverage review stopped at the orchestration time budget.",
+                        message="New research work stopped at the orchestration deadline.",
                         research_summary=aggregate,
                         orchestration_metrics=snapshot,
                         orchestrator_decision=decision,
                     )
-                    yield AgentEvent(
-                        event=AgentEventType.AGENT_DEGRADED,
-                        run_status=RunStatus.ENRICHING if profiles else RunStatus.FAILED,
-                        message="Orchestration time budget reached.",
-                        error_code="ORCHESTRATION_TIMEOUT",
-                    )
-                    break
-                try:
-                    kind, payload = output.get(timeout=0.02)
-                except queue.Empty:
-                    futures = {future for future in futures if not future.done()}
-                    continue
+                    if not research_running and not decision_running:
+                        research_finished = True
+
+                if elapsed >= self.budget.absolute_hard_stop_seconds:
+                    try:
+                        kind, payload = output.get_nowait()
+                    except queue.Empty:
+                        orchestration_failed = True
+                        yield AgentEvent(
+                            event=AgentEventType.AGENT_DEGRADED,
+                            run_status=(
+                                RunStatus.ENRICHING if profiles else RunStatus.FAILED
+                            ),
+                            message="Orchestration drain grace period exhausted.",
+                            error_code="ORCHESTRATION_TIMEOUT",
+                        )
+                        break
+                    if kind not in {
+                        "research_done",
+                        "research_failure",
+                        "decision",
+                        "decision_failure",
+                    }:
+                        orchestration_failed = True
+                        yield AgentEvent(
+                            event=AgentEventType.AGENT_DEGRADED,
+                            run_status=(
+                                RunStatus.ENRICHING if profiles else RunStatus.FAILED
+                            ),
+                            message="Orchestration drain grace period exhausted.",
+                            error_code="ORCHESTRATION_TIMEOUT",
+                        )
+                        break
+                else:
+                    try:
+                        kind, payload = output.get(timeout=0.02)
+                    except queue.Empty:
+                        continue
 
                 if kind == "research":
                     event: ResearchEvent = payload
@@ -585,6 +636,9 @@ class ProgressiveOrchestratorAgent:
                     research_running = False
                     if research_finished:
                         continue
+                    if new_work_closed:
+                        research_finished = True
+                        continue
                     snapshot = metrics()
                     if snapshot.hard_stop:
                         output.put(
@@ -598,7 +652,8 @@ class ProgressiveOrchestratorAgent:
                         futures.add(executor.submit(decision_worker, snapshot))
                 elif kind == "decision":
                     decision_running = False
-                    snapshot, proposed = payload
+                    _, proposed = payload
+                    snapshot = metrics()
                     decision = self.hard_budget_guard.enforce(snapshot, proposed)
                     yield AgentEvent(
                         event=AgentEventType.COVERAGE_REVIEWED,
@@ -609,6 +664,9 @@ class ProgressiveOrchestratorAgent:
                         orchestrator_decision=decision,
                     )
                     if decision.action != "COMPLETE":
+                        if not start_wave(decision.target_branches):
+                            research_finished = True
+                            continue
                         completed_summary = aggregate
                         if decision.action in {
                             "STRENGTHEN_NEAR_FIELD",
@@ -632,7 +690,6 @@ class ProgressiveOrchestratorAgent:
                                 orchestration_metrics=snapshot,
                                 orchestrator_decision=decision,
                             )
-                        start_wave(decision.target_branches)
                     else:
                         research_finished = True
                 elif kind == "decision_failure":

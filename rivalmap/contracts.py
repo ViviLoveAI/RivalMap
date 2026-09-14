@@ -384,7 +384,12 @@ class OrchestrationBudget(BaseModel):
     minimum_passed_candidates: int = Field(default=3, ge=1, le=20)
     minimum_branches_covered: int = Field(default=3, ge=1, le=4)
     max_active_analyses: int = Field(default=4, ge=1, le=16)
-    orchestration_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
+    new_work_deadline_seconds: float = Field(default=60.0, gt=0, le=600)
+    drain_grace_period_seconds: float = Field(default=20.0, ge=0, le=300)
+
+    @property
+    def absolute_hard_stop_seconds(self) -> float:
+        return self.new_work_deadline_seconds + self.drain_grace_period_seconds
 
 
 class OrchestratorDecision(BaseModel):
@@ -438,7 +443,7 @@ class LatencyMetrics(BaseModel):
     first_research_result_ms: float | None = Field(default=None, ge=0)
     first_validated_candidate_ms: float | None = Field(default=None, ge=0)
     first_analyzed_profile_ms: float | None = Field(default=None, ge=0)
-    initial_ready_ms: float | None = Field(default=None, ge=0)
+    first_renderable_map_ms: float | None = Field(default=None, ge=0)
     first_useful_map_ms: float | None = Field(default=None, ge=0)
     research_completion_ms: float | None = Field(default=None, ge=0)
 

@@ -9,6 +9,7 @@ from rivalmap.agents import (
     RESEARCH_DEFINITION,
     MarketFramingAgent,
     MarketIntelligenceAgent,
+    PresentationAgent,
     ProgressiveOrchestratorAgent,
     ResearchAgent,
     build_strands_agent_set,
@@ -132,6 +133,16 @@ class FakeDecisionMaker:
         if not self.actions:
             raise AssertionError("unexpected orchestration decision request")
         return self.actions.pop(0)
+
+
+class SlowPresentationAgent:
+    def __init__(self, delay):
+        self.delay = delay
+        self.delegate = PresentationAgent()
+
+    def prepare(self, market_model, nodes_by_product, delta):
+        time.sleep(self.delay)
+        return self.delegate.prepare(market_model, nodes_by_product, delta)
 
 
 def _summary(*, passed, branches):
@@ -360,6 +371,81 @@ def test_orchestration_budgets_prevent_unbounded_gap_fill_loops():
     assert reviews[-1].orchestration_metrics.hard_stop
     assert reviews[-1].orchestration_metrics.hard_stop_code == "RESEARCH_BUDGET_EXHAUSTED"
     assert len(orchestrator.test_decision_maker.calls) == 3
+
+
+def test_new_work_deadline_blocks_another_research_wave():
+    research = FakeResearchAgent(
+        [(_batch("alpha"), _summary(passed=1, branches=[ResearchBranch.DIRECT]))],
+        pause_after_batch=0.04,
+    )
+    decision_maker = FakeDecisionMaker(
+        [
+            _broad(),
+            OrchestratorDecision(
+                action="FILL_GAP",
+                target_branches=[ResearchBranch.ADJACENT],
+            ),
+        ]
+    )
+    budget = OrchestrationBudget(
+        new_work_deadline_seconds=0.01,
+        drain_grace_period_seconds=0.1,
+    )
+
+    events = list(
+        _orchestrator(
+            research,
+            decision_maker=decision_maker,
+            budget=budget,
+        ).stream(_brief())
+    )
+
+    assert len(research.calls) == 1
+    assert len(decision_maker.calls) == 1
+    assert not any(event.error_code == "ORCHESTRATION_TIMEOUT" for event in events)
+    assert events[-1].run_status == RunStatus.COMPLETE
+
+
+def test_existing_presentation_drains_after_new_work_deadline():
+    research = FakeResearchAgent(
+        [(_batch("alpha"), _summary(passed=1, branches=list(ResearchBranch)))]
+    )
+    budget = OrchestrationBudget(
+        max_research_waves=1,
+        new_work_deadline_seconds=0.01,
+        drain_grace_period_seconds=0.1,
+    )
+
+    events = list(
+        _orchestrator(
+            research,
+            budget=budget,
+            presentation=SlowPresentationAgent(0.03),
+        ).stream(_brief())
+    )
+
+    assert AgentEventType.PRESENTATION_UPDATE in [event.event for event in events]
+    assert not any(event.error_code == "ORCHESTRATION_TIMEOUT" for event in events)
+    assert events[-1].run_status == RunStatus.COMPLETE
+
+
+def test_absolute_hard_stop_emits_orchestration_timeout():
+    research = FakeResearchAgent(
+        [(_batch("alpha"), _summary(passed=1, branches=[ResearchBranch.DIRECT]))],
+        pause_after_batch=0.08,
+    )
+    budget = OrchestrationBudget(
+        new_work_deadline_seconds=0.01,
+        drain_grace_period_seconds=0.01,
+    )
+
+    events = list(_orchestrator(research, budget=budget).stream(_brief()))
+
+    timeout = next(
+        event for event in events if event.error_code == "ORCHESTRATION_TIMEOUT"
+    )
+    assert timeout.event == AgentEventType.AGENT_DEGRADED
+    assert "grace period" in timeout.message
 
 
 def test_agent_failure_degrades_gracefully_and_emits_no_raw_exception():

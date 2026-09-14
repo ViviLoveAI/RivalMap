@@ -130,9 +130,13 @@ class BedrockVerticalSlice:
             ):
                 latency.mark("first_analyzed_profile_ms")
             if event.visualization_delta is not None:
-                latency.mark("first_useful_map_ms")
+                if any(
+                    node.node_type == "PRODUCT"
+                    for node in event.visualization_delta.upsert_nodes
+                ):
+                    latency.mark("first_renderable_map_ms")
                 if event.visualization_delta.run_status == RunStatus.INITIAL_READY:
-                    latency.mark("initial_ready_ms")
+                    latency.mark("first_useful_map_ms")
             if (
                 event.event == AgentEventType.COVERAGE_REVIEWED
                 and event.orchestrator_decision is not None

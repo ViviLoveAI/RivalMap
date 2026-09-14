@@ -14,6 +14,7 @@ from rivalmap.contracts import (
     MapNode,
     MarketBrief,
     MarketModel,
+    OrchestrationBudget,
     ProductRelation,
     ResearchBatch,
     RivalMapState,
@@ -309,3 +310,11 @@ def test_current_rival_map_state_payload_is_backward_compatible():
 
     assert state.model_dump(mode="json") == legacy_payload
     assert set(RivalMapState.model_fields) == set(legacy_payload)
+
+
+def test_orchestration_budget_has_separate_new_work_and_drain_deadlines():
+    budget = OrchestrationBudget()
+
+    assert budget.new_work_deadline_seconds == 60
+    assert budget.drain_grace_period_seconds == 20
+    assert budget.absolute_hard_stop_seconds == 80
