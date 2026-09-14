@@ -1,0 +1,26 @@
+[Unit]
+Description=RivalMap Hackathon Demo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rivalmap
+Group=rivalmap
+WorkingDirectory=/opt/rivalmap
+EnvironmentFile=/etc/rivalmap/rivalmap.env
+ExecStart=/opt/rivalmap/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8000 --workers 1 --no-access-log
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+KillSignal=SIGINT
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rivalmap
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
