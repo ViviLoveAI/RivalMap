@@ -90,10 +90,10 @@ ruff check .
 
 ```json
 {
-  "idea": "帮助留学生练习英语面试的工具",
-  "target_user": "留学生",
-  "problem": "面试表达紧张",
-  "exclusions": ["少儿"]
+  "idea": "AI interview coaching platform for international students",
+  "target_user": "International students",
+  "problem": "Practice interview communication and receive actionable feedback",
+  "exclusions": ["Children's education products"]
 }
 ```
 
