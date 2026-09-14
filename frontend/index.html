@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="RivalMap — see the competitive market around your product idea." />
+    <title>RivalMap</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="RivalMap home">
+          <span class="brand-mark">R</span>
+          <span>RivalMap</span>
+        </a>
+        <form id="idea-form" class="idea-form">
+          <label class="sr-only" for="idea">Product idea</label>
+          <input id="idea" name="idea" required value="AI interview coaching platform" />
+          <label class="sr-only" for="target-user">Target customer</label>
+          <input id="target-user" name="target_user" placeholder="Target customer" value="job seekers" />
+          <label class="sr-only" for="problem">Problem</label>
+          <input id="problem" name="problem" placeholder="Problem to solve" value="practice interviews and receive feedback" />
+          <button type="submit">Map the market <span aria-hidden="true">→</span></button>
+        </form>
+        <div id="run-status" class="status-pill" data-tone="searching">Ready</div>
+      </header>
+
+      <section class="workspace">
+        <aside class="activity-panel">
+          <div>
+            <p class="eyebrow">Agent activity</p>
+            <h1>From idea to market shape.</h1>
+            <p class="subtle">Watch the map form as RivalMap researches and interprets your category.</p>
+          </div>
+          <ol id="activity-list" class="activity-list" aria-live="polite"></ol>
+          <div class="coverage-card">
+            <span>Relevant products</span>
+            <strong id="candidate-count">0</strong>
+            <div class="coverage-track"><span id="coverage-fill"></span></div>
+          </div>
+          <div class="legend">
+            <span><i class="dot dot-focus"></i>Closest rivals</span>
+            <span><i class="dot dot-market"></i>Market context</span>
+          </div>
+        </aside>
+
+        <section class="map-panel" aria-label="Competitive market map">
+          <div class="map-heading">
+            <div>
+              <p class="eyebrow">Competitive landscape</p>
+              <h2 id="map-title">Your market is ready to explore</h2>
+            </div>
+            <p id="map-caption">Submit an idea to begin mapping nearby products.</p>
+          </div>
+          <div id="map-stage" class="map-stage">
+            <svg id="market-map" viewBox="0 0 1000 700" role="img" aria-label="User-centered RivalMap">
+              <defs>
+                <radialGradient id="center-glow">
+                  <stop offset="0" stop-color="#ff6b45" stop-opacity="0.2" />
+                  <stop offset="1" stop-color="#ff6b45" stop-opacity="0" />
+                </radialGradient>
+                <filter id="soft-shadow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity="0.14" />
+                </filter>
+              </defs>
+              <g id="map-grid" aria-hidden="true">
+                <circle cx="500" cy="350" r="92"></circle>
+                <circle cx="500" cy="350" r="190"></circle>
+                <circle cx="500" cy="350" r="290"></circle>
+                <line x1="500" y1="42" x2="500" y2="658"></line>
+                <line x1="80" y1="350" x2="920" y2="350"></line>
+              </g>
+              <g id="cluster-layer"></g>
+              <g id="focus-layer">
+                <circle id="focus-glow" cx="500" cy="350" r="0"></circle>
+                <circle id="focus-ring" cx="500" cy="350" r="0"></circle>
+                <text id="focus-label" x="500" y="350">Closest rivals</text>
+              </g>
+              <g id="node-layer"></g>
+            </svg>
+            <div id="empty-message" class="empty-message">
+              <span class="pulse-dot"></span>
+              <strong>Understanding your market...</strong>
+              <small>Competitors will appear as they are validated.</small>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="insight-strip" aria-label="Market interpretation">
+        <article><p class="eyebrow">Closest Rivals</p><div id="closest-rivals"><p class="placeholder">Waiting for the Focus Ring.</p></div></article>
+        <article><p class="eyebrow">Your Differentiation</p><div id="differentiation"><p class="placeholder">Positioning signals will appear here.</p></div></article>
+        <article><p class="eyebrow">Opportunity Around You</p><div id="opportunity"><p class="placeholder">Whitespace will emerge as the map fills.</p></div></article>
+      </section>
+    </main>
+
+    <aside id="detail-panel" class="detail-panel" aria-hidden="true">
+      <button id="close-detail" class="icon-button" aria-label="Close details">×</button>
+      <p class="eyebrow">Product profile</p>
+      <h2 id="detail-name">Product</h2>
+      <div id="detail-relationship" class="relationship-chip">Analyzed</div>
+      <dl id="detail-facts"></dl>
+      <div id="detail-sources" class="sources"></div>
+      <button id="compare-toggle" class="secondary-button">Add to compare</button>
+    </aside>
+
+    <section id="compare-tray" class="compare-tray" aria-label="Compare products">
+      <div class="compare-header">
+        <div><p class="eyebrow">Compare</p><h2><span id="compare-count">0</span> of 4 products</h2></div>
+        <button id="clear-compare" class="text-button">Clear</button>
+      </div>
+      <div id="compare-empty" class="compare-empty">Open a product and add 2–4 nodes to compare.</div>
+      <div id="compare-table-wrap" class="compare-table-wrap"></div>
+    </section>
+
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>

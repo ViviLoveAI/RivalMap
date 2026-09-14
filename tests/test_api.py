@@ -2,7 +2,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from rivalmap.api import create_router
-from rivalmap.contracts import EvidenceItem, EvidenceRelation, Source, SourceQuality
+from rivalmap.contracts import (
+    AgentEvent,
+    AgentEventType,
+    EvidenceItem,
+    EvidenceRelation,
+    RunStatus,
+    Source,
+    SourceQuality,
+)
 from rivalmap.runtime import RivalMapRuntime
 
 
@@ -51,3 +59,43 @@ def test_stream_endpoint_returns_progress_events():
     assert response.status_code == 200
     assert "event: evidence_ready" in response.text
     assert "event: rival_map_ready" in response.text
+
+
+class FakeProgressiveRunner:
+    def stream(self, product_idea, *, target_user, problem):
+        _ = target_user, problem
+        yield AgentEvent(
+            event=AgentEventType.FRAMING_STARTED,
+            run_status=RunStatus.FRAMING,
+            message=f"Framing {product_idea}.",
+        )
+        yield AgentEvent(
+            event=AgentEventType.ORCHESTRATION_COMPLETE,
+            run_status=RunStatus.COMPLETE,
+            message="RivalMap orchestration complete.",
+        )
+
+
+def test_progressive_stream_exposes_safe_agent_events_without_eager_provider_startup():
+    app = FastAPI()
+    app.include_router(
+        create_router(
+            RivalMapRuntime(discovery=FakeDiscovery()),
+            progressive_factory=FakeProgressiveRunner,
+        )
+    )
+
+    response = TestClient(app).post(
+        "/api/v1/runs/stream",
+        json={
+            "idea": "AI interview practice",
+            "target_user": "job seekers",
+            "problem": "practice interviews",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+    assert "event: framing_started" in response.text
+    assert "event: orchestration_complete" in response.text
+    assert "raw_trace" not in response.text

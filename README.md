@@ -71,6 +71,10 @@ Health check:
 curl http://127.0.0.1:8876/health
 ```
 
+Open `http://127.0.0.1:8876/` for the progressive RivalMap frontend. It consumes
+the Bedrock vertical slice through `POST /api/v1/runs/stream`; the original
+`POST /api/runs` and `POST /api/runs/stream` contracts remain unchanged.
+
 Run tests:
 
 ```bash
