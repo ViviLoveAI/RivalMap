@@ -78,6 +78,20 @@ class IntelligenceEventType(StrEnum):
     ANALYSIS_FAILED = "analysis_failed"
 
 
+class AgentEventType(StrEnum):
+    FRAMING_STARTED = "framing_started"
+    FRAMING_QUESTION = "framing_question"
+    MARKET_BRIEF_UPDATED = "market_brief_updated"
+    RESEARCH_REQUESTED = "research_requested"
+    RESEARCH_PROGRESS = "research_progress"
+    ENRICHMENT_REQUESTED = "enrichment_requested"
+    INTELLIGENCE_PROGRESS = "intelligence_progress"
+    COVERAGE_REVIEWED = "coverage_reviewed"
+    PRESENTATION_UPDATE = "presentation_update"
+    AGENT_DEGRADED = "agent_degraded"
+    ORCHESTRATION_COMPLETE = "orchestration_complete"
+
+
 class RuntimeEventType(StrEnum):
     RUN_STARTED = "run_started"
     DISCOVERY_STARTED = "discovery_started"
@@ -364,6 +378,65 @@ class ResearchSummary(BaseModel):
     research_continuing: bool = True
 
 
+class OrchestrationBudget(BaseModel):
+    max_research_waves: int = Field(default=3, ge=1, le=3)
+    max_targeted_enrichments: int = Field(default=2, ge=0, le=2)
+    minimum_passed_candidates: int = Field(default=3, ge=1, le=20)
+    minimum_branches_covered: int = Field(default=3, ge=1, le=4)
+    max_active_analyses: int = Field(default=4, ge=1, le=16)
+    orchestration_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
+
+
+class OrchestratorDecision(BaseModel):
+    action: Literal[
+        "CONTINUE_BROAD",
+        "STRENGTHEN_NEAR_FIELD",
+        "FILL_GAP",
+        "COMPLETE",
+    ]
+    target_branches: list[ResearchBranch] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def direction_matches_action(self) -> OrchestratorDecision:
+        if self.action == "COMPLETE" and self.target_branches:
+            raise ValueError("COMPLETE cannot request research branches")
+        if self.action != "COMPLETE" and not self.target_branches:
+            raise ValueError("research actions require at least one target branch")
+        return self
+
+
+class OrchestrationMetrics(BaseModel):
+    research_summary: ResearchSummary
+    framing_sufficient: bool
+    near_field_quality: float = Field(ge=0, le=1)
+    target_passed_candidates: int = Field(ge=1)
+    target_branches_covered: int = Field(ge=1, le=4)
+    elapsed_seconds: float = Field(ge=0)
+    remaining_research_waves: int = Field(ge=0)
+    remaining_targeted_enrichments: int = Field(ge=0)
+    missing_branches: list[ResearchBranch] = Field(default_factory=list)
+    hard_stop: bool = False
+    hard_stop_code: Literal[
+        "RESEARCH_BUDGET_EXHAUSTED",
+        "TIME_BUDGET_EXHAUSTED",
+    ] | None = None
+
+
+class PresentationSections(BaseModel):
+    closest_rivals: list[str] = Field(default_factory=list)
+    your_differentiation: list[str] = Field(default_factory=list)
+    opportunity_around_you: list[str] = Field(default_factory=list)
+    node_labels: dict[str, str] = Field(default_factory=dict)
+    callouts: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class ComparisonPresentation(BaseModel):
+    title: str = Field(min_length=1)
+    product_labels: list[str] = Field(min_length=2)
+    summary: str = Field(min_length=1)
+    source_evidence_ids: list[str] = Field(min_length=1)
+
+
 class ResearchEvent(BaseModel):
     event: ResearchEventType
     summary: ResearchSummary
@@ -609,6 +682,30 @@ class VisualizationDelta(BaseModel):
             if ranks != list(range(1, len(ranks) + 1)):
                 raise ValueError("focus ring ranks must be contiguous and ordered")
         return self
+
+
+class AgentEvent(BaseModel):
+    """Safe orchestration event; raw model/Strands traces are intentionally excluded."""
+
+    event: AgentEventType
+    run_status: RunStatus
+    message: str = Field(min_length=1)
+    market_brief: MarketBrief | None = None
+    question_field: Literal["problem", "target_user", "exclusions"] | None = None
+    research_summary: ResearchSummary | None = None
+    orchestration_metrics: OrchestrationMetrics | None = None
+    orchestrator_decision: OrchestratorDecision | None = None
+    research_event: ResearchEvent | None = None
+    intelligence_event: IntelligenceEvent | None = None
+    visualization_delta: VisualizationDelta | None = None
+    presentation: PresentationSections | None = None
+    error_code: Literal[
+        "RESEARCH_AGENT_FAILED",
+        "INTELLIGENCE_AGENT_FAILED",
+        "PRESENTATION_AGENT_FAILED",
+        "ORCHESTRATOR_AGENT_FAILED",
+        "ORCHESTRATION_TIMEOUT",
+    ] | None = None
 
 
 class ComparisonRequest(BaseModel):
