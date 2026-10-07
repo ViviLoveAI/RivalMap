@@ -29,61 +29,49 @@ Describe what you want to build, who it is for, and the problem it solves. Rival
 
 Findings stay linked to their sources, and incomplete evidence is made visible so you can distinguish supported facts from open questions.
 
-## Architecture
+## How the agents work
 
-RivalMap is organized as two cooperating planes:
+Five agents turn a product idea into market intelligence. The Market Framing Agent
+clarifies the idea, and the Orchestrator decides whether to broaden research,
+strengthen coverage of close competitors, fill a gap, or stop. Research results
+and map quality feed back into that decision.
 
-- The **agentic control plane** decides which bounded work is worth doing next.
-- The **deterministic data plane** validates evidence, analyzes admitted products,
-  and produces repeatable map updates.
-
-The frontend consumes those updates as an SSE stream; Bedrock and Exa stay behind
-provider boundaries rather than leaking into product or map logic.
+Meanwhile, validated candidates move through analysis and into the map as they
+become ready. The Orchestrator reviews overall coverage; individual products do
+not need its approval to appear.
 
 ```mermaid
 flowchart TB
-    Browser[Browser<br/>interactive map, detail, compare, export]
-    API[FastAPI + SSE boundary<br/>typed events and active-run refinement]
+    User[User] <-->|Idea / clarification| Framing[Market Framing Agent]
+    Framing -->|MarketBrief| Orchestrator[Orchestrator Agent<br/>Choose direction · review coverage]
+    Budget[Hard budget guard<br/>Limits cannot be overridden] -.-> Orchestrator
 
-    subgraph Control[Agentic control plane]
-        Framer[Market Framing Agent]
-        Orchestrator[Orchestrator Agent]
-        ResearchAgent[Research Agent]
-        IntelligenceAgent[Market Intelligence Agent]
-        PresentationAgent[Presentation Agent]
+    subgraph Specialists[Service-backed specialist agents]
+        Research[Research Agent<br/>Choose queries · invoke research]
+        Intelligence[Market Intelligence Agent<br/>Interpret evidence · enrich profiles]
+        Presentation[Presentation Agent<br/>Labels · callouts · strategy synthesis]
     end
 
-    subgraph Data[Deterministic data plane]
-        Research[Parallel research<br/>fan-out, normalization, validation]
-        Intelligence[Market intelligence<br/>fusion and provenance]
-        Map[Stable market map<br/>similarity, layout, clusters, Focus Ring]
-    end
+    Orchestrator -->|Broad / near-field / gap-fill| Research
+    Research -->|Validated candidates| Intelligence
+    Intelligence -->|Profiles| Map[Deterministic map service]
+    Map -->|Market model + map metadata| Presentation
 
-    subgraph Providers[Provider boundary]
-        Exa[Exa<br/>market discovery]
-        Bedrock[Amazon Bedrock + Strands<br/>structured model execution]
-    end
+    Research -.->|Counts + branch coverage| Orchestrator
+    Map -.->|Near-field quality| Orchestrator
+    Orchestrator -->|COMPLETE| Done[Stop research · drain active work]
 
-    Browser --> API
-    API --> Framer
-    Framer --> Orchestrator
-    Orchestrator --> ResearchAgent
-    Orchestrator --> IntelligenceAgent
-    Orchestrator --> PresentationAgent
-    ResearchAgent --> Research
-    IntelligenceAgent --> Intelligence
-    Research <--> Exa
-    Framer <--> Bedrock
-    Orchestrator <--> Bedrock
-    ResearchAgent <--> Bedrock
-    IntelligenceAgent <--> Bedrock
-    PresentationAgent <--> Bedrock
-    Research --> Intelligence
-    Intelligence --> Map
-    Map --> PresentationAgent
-    PresentationAgent --> API
-    Map --> API
+    classDef agent fill:#eaf3f1,stroke:#197a73,color:#132321
+    classDef support fill:#f6f7f9,stroke:#8a969e,color:#132321
+    class Framing,Orchestrator,Research,Intelligence,Presentation agent
+    class Budget,Map,Done support
 ```
+
+Solid arrows show work and data handoffs; dotted arrows show feedback and hard
+constraints. These handoffs are coordinated by the runtime rather than free-form
+agent conversations. The Orchestrator chooses research direction from aggregate
+metrics; admitted candidates continue through intelligence and map updates
+without per-candidate approval.
 
 ### Agent responsibilities
 
@@ -91,49 +79,60 @@ flowchart TB
 | --- | --- | --- |
 | Market Framing Agent | Converts explicit user input into a typed `MarketBrief`; asks one concise question at a time. | Invent missing market facts. |
 | Orchestrator Agent | Chooses the next bounded research direction: `CONTINUE_BROAD`, `STRENGTHEN_NEAR_FIELD`, `FILL_GAP`, or `COMPLETE`. | Approve individual candidates or override hard limits. |
-| Research Agent | Calls the concurrent Exa research service and can request targeted follow-up waves. | Validate, analyze, or position products. |
+| Research Agent | Calls the concurrent Exa research service and can request targeted follow-up waves. | Validate, analyze, or position products itself. |
 | Market Intelligence Agent | Interprets admitted evidence with structured and semantic analysis paths. | Change map coordinates, similarity, clusters, or Focus Ring membership. |
 | Presentation Agent | Produces concise labels, callouts, and comparison-ready metadata from the current model. | Invent research, rankings, or geometry. |
 
-Strands provides the agent framework and Amazon Bedrock provides injectable, role-specific models. The agents expose typed, validated outputs; raw reasoning and traces are never sent to the frontend.
+## System architecture
 
-## Inside the agentic control plane
-
-RivalMap is not a fixed search-and-summarize chain. Its Orchestrator continuously chooses the next bounded research direction from coverage, near-field quality, elapsed time, and remaining budgets. Meanwhile, admitted candidates flow directly through analysis and into the map; they never wait for a final orchestration decision.
-
-Internally, this is a hierarchical tool pattern—not a free-form agent swarm:
-the Framing Agent owns the evolving user context, the Orchestrator owns
-high-level direction, and the specialist agents invoke the tested services
-within their narrow responsibilities.
+The implementation separates agent decisions from the services that execute them.
+Read this diagram from top to bottom as application layers, rather than a sequence
+of agent decisions. The three processing services share one bounded runtime.
 
 ```mermaid
 flowchart TB
-    User[User idea and framing answers] --> Framing[Market Framing Agent<br/>creates and updates MarketBrief]
-    Framing --> Ready{Enough context<br/>to start research?}
-    Ready -- no --> Framing
-    Ready -- yes --> Orchestrator[Orchestrator Agent<br/>selects a bounded next action]
+    UI[Browser workspace<br/>Map · details · compare · export]
+    API[FastAPI + SSE<br/>Requests · brief refinement · live updates]
+    Runtime[Agent and streaming runtime<br/>Strands · typed outputs · concurrency · hard budgets]
 
-    Orchestrator -->|Continue broad research<br/>Strengthen near field<br/>Fill a gap| Research[Research Agent<br/>parallel Exa branches]
-    Research --> Validation[Deterministic validation gate<br/>PASS · PROVISIONAL · REJECT]
-    Validation -->|admitted candidates| Intelligence[Market Intelligence Agent<br/>structured and semantic paths in parallel]
-    Intelligence --> Map[Deterministic map engine<br/>similarity · stable layout · Focus Ring]
-    Map --> UI[Live SSE map, details, comparison, export]
+    subgraph Services[Processing services]
+        Research[Parallel research<br/>Normalization · deduplication<br/>Candidate validation]
+        Intelligence[Market intelligence<br/>Structured + semantic analysis<br/>Evidence-preserving fusion]
+        Map[Stable map engine<br/>Similarity · incremental layout<br/>Clusters · Focus Ring]
+    end
 
-    Research --> Coverage[Research summary and branch coverage]
-    Intelligence --> Coverage
-    Map --> Coverage
-    Coverage --> Orchestrator
-    Orchestrator -->|Coverage sufficient or hard limit reached| Complete[Complete with best available map]
+    subgraph Providers[External providers]
+        Exa[Exa adapter<br/>Web evidence]
+        Bedrock[Bedrock model adapter<br/>Role-specific models]
+    end
 
-    Guardrails[Deterministic guardrails<br/>research budgets · deadlines · validation · layout] -. constrain .-> Orchestrator
-    Guardrails -. constrain .-> Research
-    Guardrails -. constrain .-> Map
+    UI <-->|HTTP / SSE| API
+    API --- Runtime
+    Runtime --- Research
+    Runtime --- Intelligence
+    Runtime --- Map
+    Research --- Exa
+    Intelligence --- Bedrock
+    Runtime -.->|Agent inference| Bedrock
+
+    classDef agent fill:#eaf3f1,stroke:#197a73,color:#132321
+    classDef service fill:#f6f7f9,stroke:#8a969e,color:#132321
+    classDef provider fill:#fff5ef,stroke:#c38b6b,color:#132321
+    class Runtime agent
+    class Research,Intelligence,Map service
+    class Exa,Bedrock provider
 ```
 
-This is bounded agentic automation: agents choose *what to do next* within explicit tool boundaries, while deterministic services preserve repeatability, evidence handling, safety limits, and stable visual output.
+Research emits validated candidates and evidence. Market intelligence analyzes
+each admitted candidate through parallel structured and semantic paths, then
+fuses the results into an `EnrichedProductProfile`. The map engine consumes each
+profile and produces a `VisualizationDelta` for incremental rendering.
 
-The user sees their idea as the strategic anchor. Nearby, high-confidence competitors form the Focus Ring; adjacent and broader-market products remain as lower-emphasis context. Every mapped product can be opened for its available facts, semantic relationship, confidence, and supporting sources.
-
+The runtime sends research progress, product intelligence, map deltas, and
+presentation metadata back through SSE. These return paths share the API rather
+than separate connections from every service to the browser. Validation, map
+geometry, and Focus Ring selection remain deterministic; model outputs are typed
+and validated, and raw reasoning is never sent to the frontend.
 
 ## How a run works
 
