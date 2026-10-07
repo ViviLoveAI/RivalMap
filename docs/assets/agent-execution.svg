@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1060" viewBox="0 0 1440 1060" role="img" aria-labelledby="title desc">
+  <title id="title">RivalMap — agent decisions and progressive parallel execution</title>
+  <desc id="desc">Framing supplies a MarketBrief to the Orchestrator. The Orchestrator directs research under hard budgets and reviews aggregate feedback. Four research branches run concurrently. Each admitted candidate receives parallel structured and semantic analysis, followed by fusion. Profiles immediately update the deterministic map and stream to the UI. Presentation model synthesis occurs at milestones, after the map update is emitted.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#566b77" stroke-width="1.5"/></marker>
+    <marker id="tealArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#197a73" stroke-width="1.5"/></marker>
+    <style>
+      text{font-family:Arial,Helvetica,sans-serif;fill:#172d36}
+      .title{font-size:30px;font-weight:700;letter-spacing:-.5px}
+      .subtitle{font-size:17px;fill:#566b77}
+      .section{font-size:13px;font-weight:700;letter-spacing:2px;fill:#657c87}
+      .heading{font-size:21px;font-weight:700}
+      .body{font-size:16px;fill:#425d69}
+      .small{font-size:14px;fill:#526b77}
+      .label{font-size:14px;font-weight:700;fill:#197a73}
+      .node{font-size:16px;font-weight:700}
+      .chip{font-size:13px;font-weight:700;fill:#245c58}
+      .card{fill:#fff;stroke:#d4dfe3;stroke-width:1.5}
+      .agent{fill:#f3f9f8;stroke:#79aaa4;stroke-width:1.5}
+      .service{fill:#f4f7fa;stroke:#c1d0d9;stroke-width:1.3}
+      .wire{fill:none;stroke:#566b77;stroke-width:1.6;marker-end:url(#arrow)}
+      .branch{fill:none;stroke:#8498a2;stroke-width:1.5}
+      .feedback{fill:none;stroke:#197a73;stroke-width:1.8;stroke-dasharray:6 5;marker-end:url(#tealArrow)}
+    </style>
+  </defs>
+  <rect width="1440" height="1060" rx="16" fill="#fbfcfd"/>
+  <text x="50" y="56" class="title">RivalMap: decide, research, and reveal</text>
+  <text x="50" y="86" class="subtitle">Adaptive decisions. Bounded parallel work. Useful output before research finishes.</text>
+
+  <text x="50" y="125" class="section">01 / ADAPTIVE CONTROL — DECIDE FROM FEEDBACK, WITH HARD LIMITS</text>
+  <rect x="50" y="146" width="340" height="174" rx="12" class="agent"/>
+  <text x="73" y="179" class="heading">Market Framing Agent</text>
+  <text x="73" y="210" class="body">User idea + clarification answers</text>
+  <text x="73" y="237" class="body">Establish the problem and customer</text>
+  <text x="73" y="280" class="label">Output: typed MarketBrief</text>
+  <path d="M390 216 H468" class="wire"/>
+
+  <rect x="470" y="146" width="490" height="174" rx="12" class="agent"/>
+  <text x="493" y="179" class="heading">Orchestrator Agent</text>
+  <text x="493" y="208" class="body">Review coverage; choose the next research action</text>
+  <rect x="493" y="225" width="139" height="32" rx="6" fill="#e3efed"/>
+  <rect x="642" y="225" width="148" height="32" rx="6" fill="#e3efed"/>
+  <rect x="800" y="225" width="136" height="32" rx="6" fill="#e3efed"/>
+  <text x="562" y="246" text-anchor="middle" class="chip">Continue broad</text>
+  <text x="716" y="246" text-anchor="middle" class="chip">Strengthen nearby</text>
+  <text x="868" y="246" text-anchor="middle" class="chip">Fill a gap</text>
+  <text x="493" y="293" class="body">COMPLETE: stop research and drain active work</text>
+
+  <rect x="1030" y="146" width="360" height="174" rx="12" class="service"/>
+  <text x="1053" y="179" class="heading">Hard budget guard</text>
+  <text x="1053" y="211" class="body">Wave limits · remaining time</text>
+  <text x="1053" y="238" class="body">Concurrency · request timeouts</text>
+  <text x="1053" y="280" class="small">Deterministic limits constrain decisions</text>
+  <path d="M1030 216 H962" class="wire"/>
+
+  <path d="M545 320 V351 H32 V424 H67 V428" class="wire"/>
+  <text x="150" y="344" class="small">Research direction / next wave</text>
+  <path d="M405 430 V422 H985 V378 H790 V323" class="feedback"/>
+  <path d="M1260 430 V378 H795" class="feedback"/>
+  <text x="816" y="367" class="label">Counts · branch coverage · near-field quality</text>
+
+  <text x="50" y="413" class="section">02 / BOUNDED PARALLEL EXECUTION — EACH PRODUCT PROGRESSES INDEPENDENTLY</text>
+
+  <rect x="50" y="430" width="370" height="380" rx="12" class="card"/>
+  <rect x="50" y="430" width="370" height="64" rx="12" fill="#eef6f4"/>
+  <text x="73" y="461" class="heading">Research Agent</text>
+  <text x="73" y="482" class="small">Concurrent Exa queries across research branches</text>
+  <path d="M79 523 V655 M79 523 H101 M79 567 H101 M79 611 H101 M79 655 H101" class="branch"/>
+  <path d="M367 523 V655 M347 523 H367 M347 567 H367 M347 611 H367 M347 655 H367" class="branch"/>
+  <rect x="102" y="506" width="245" height="34" rx="5" class="service"/>
+  <rect x="102" y="550" width="245" height="34" rx="5" class="service"/>
+  <rect x="102" y="594" width="245" height="34" rx="5" class="service"/>
+  <rect x="102" y="638" width="245" height="34" rx="5" class="service"/>
+  <text x="224" y="528" text-anchor="middle" class="node">Direct competitors</text>
+  <text x="224" y="572" text-anchor="middle" class="node">Adjacent competitors</text>
+  <text x="224" y="616" text-anchor="middle" class="node">Category discovery</text>
+  <text x="224" y="660" text-anchor="middle" class="node">Alternative workflows</text>
+  <path d="M367 655 V684 H235 V697" class="wire"/>
+  <rect x="73" y="700" width="323" height="55" rx="7" class="service"/>
+  <text x="234" y="723" text-anchor="middle" class="node">Normalize · deduplicate · validate</text>
+  <text x="234" y="745" text-anchor="middle" class="small">PASS / selected PROVISIONAL proceed</text>
+  <text x="73" y="786" class="label">Parallel search · retain successful results</text>
+
+  <path d="M420 620 H468" class="wire"/>
+  <rect x="470" y="430" width="490" height="380" rx="12" class="card"/>
+  <rect x="470" y="430" width="490" height="64" rx="12" fill="#eef6f4"/>
+  <text x="493" y="461" class="heading">Market Intelligence Agent</text>
+  <text x="493" y="482" class="small">Each admitted candidate + its evidence</text>
+  <text x="715" y="517" text-anchor="middle" class="label">Two analysis paths run in parallel</text>
+  <path d="M715 526 H595 V540 M715 526 H835 V540" class="branch"/>
+  <rect x="500" y="542" width="190" height="104" rx="8" class="service"/>
+  <rect x="740" y="542" width="190" height="104" rx="8" class="service"/>
+  <text x="595" y="570" text-anchor="middle" class="node">Structured analysis</text>
+  <text x="595" y="599" text-anchor="middle" class="small">Facts · capabilities</text>
+  <text x="595" y="622" text-anchor="middle" class="small">Customers · pricing</text>
+  <text x="835" y="570" text-anchor="middle" class="node">Semantic analysis</text>
+  <text x="835" y="599" text-anchor="middle" class="small">Positioning · relevance</text>
+  <text x="835" y="622" text-anchor="middle" class="small">Differentiation</text>
+  <path d="M595 646 V668 H715 M835 646 V668 H715" class="branch"/>
+  <path d="M715 668 V698" class="wire"/>
+  <rect x="560" y="700" width="310" height="55" rx="7" class="service"/>
+  <text x="715" y="723" text-anchor="middle" class="node">Deterministic fusion</text>
+  <text x="715" y="745" text-anchor="middle" class="small">EnrichedProductProfile + provenance</text>
+  <text x="493" y="786" class="label">Multiple candidates in flight · bounded concurrency</text>
+
+  <path d="M960 620 H1008" class="wire"/>
+  <rect x="1010" y="430" width="380" height="380" rx="12" class="card"/>
+  <text x="1033" y="461" class="heading">Progressive map delivery</text>
+  <text x="1033" y="482" class="small">Stable geometry — no presentation-model gate</text>
+  <rect x="1033" y="515" width="334" height="105" rx="8" class="service"/>
+  <text x="1200" y="544" text-anchor="middle" class="node">StableMarketMap.update()</text>
+  <text x="1200" y="574" text-anchor="middle" class="body">Similarity · stable layout · clusters</text>
+  <text x="1200" y="599" text-anchor="middle" class="body">Backend-controlled Focus Ring</text>
+  <path d="M1200 620 V648" class="wire"/>
+  <rect x="1033" y="650" width="334" height="64" rx="8" class="service"/>
+  <text x="1200" y="676" text-anchor="middle" class="node">VisualizationDelta + metadata</text>
+  <text x="1200" y="699" text-anchor="middle" class="small">Emit immediately through SSE</text>
+  <path d="M1200 714 V741" class="wire"/>
+  <rect x="1033" y="744" width="334" height="43" rx="7" fill="#e3efed"/>
+  <text x="1200" y="772" text-anchor="middle" class="node">Live map · details · compare</text>
+
+  <text x="50" y="854" class="section">03 / SYNTHESIZE AT MILESTONES — NOT FOR EVERY NODE</text>
+  <rect x="520" y="867" width="450" height="112" rx="12" class="agent"/>
+  <text x="543" y="899" class="heading">Presentation Agent</text>
+  <text x="543" y="929" class="body">INITIAL_READY + useful final refresh</text>
+  <text x="543" y="953" class="small">Stateless model call → strategy interpretation</text>
+  <path d="M1200 810 V906 H972" class="wire"/>
+  <text x="1042" y="853" class="small">After map emission</text>
+  <text x="1042" y="877" class="small">Milestones only</text>
+  <text x="73" y="902" class="node">Explore while research continues</text>
+  <text x="73" y="931" class="body">First useful map does not wait</text>
+  <text x="73" y="955" class="body">for presentation synthesis.</text>
+
+  <path d="M50 1008 H1390" stroke="#dfe6e9"/>
+  <text x="50" y="1035" class="small">Runtime-coordinated handoffs, not agent chat. Teal dashed lines: aggregate feedback. Model synthesis never chooses map coordinates.</text>
+</svg>

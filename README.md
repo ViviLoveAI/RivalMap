@@ -40,38 +40,50 @@ Meanwhile, validated candidates move through analysis and into the map as they
 become ready. The Orchestrator reviews overall coverage; individual products do
 not need its approval to appear.
 
-```mermaid
-flowchart TB
-    User[User] <-->|Idea / clarification| Framing[Market Framing Agent]
-    Framing -->|MarketBrief| Orchestrator[Orchestrator Agent<br/>Choose direction · review coverage]
-    Budget[Hard budget guard<br/>Limits cannot be overridden] -.-> Orchestrator
+![RivalMap agent execution: feedback-driven decisions, bounded parallel research and analysis, immediate map delivery, and milestone presentation synthesis](docs/assets/agent-execution.svg)
 
-    subgraph Specialists[Service-backed specialist agents]
-        Research[Research Agent<br/>Choose queries · invoke research]
-        Intelligence[Market Intelligence Agent<br/>Interpret evidence · enrich profiles]
-        Presentation[Presentation Agent<br/>Labels · callouts · strategy synthesis]
-    end
+*Read the diagram in three bands: decide what to research, process evidence in
+parallel, then synthesize at milestones. Teal dashed lines carry aggregate
+feedback to the Orchestrator. Handoffs are runtime-coordinated, not free-form
+agent conversations. [Open the full-size diagram](docs/assets/agent-execution.svg).*
 
-    Orchestrator -->|Broad / near-field / gap-fill| Research
-    Research -->|Validated candidates| Intelligence
-    Intelligence -->|Profiles| Map[Deterministic map service]
-    Map -->|Market model + map metadata| Presentation
+> **Version scope:** The diagram includes the local Presentation optimization:
+> stateless synthesis at `INITIAL_READY` and a useful final refresh. This change
+> has not yet been published with the runtime or verified on the live deployment.
 
-    Research -.->|Counts + branch coverage| Orchestrator
-    Map -.->|Near-field quality| Orchestrator
-    Orchestrator -->|COMPLETE| Done[Stop research · drain active work]
+### Why this design matters
 
-    classDef agent fill:#eaf3f1,stroke:#197a73,color:#132321
-    classDef support fill:#f6f7f9,stroke:#8a969e,color:#132321
-    class Framing,Orchestrator,Research,Intelligence,Presentation agent
-    class Budget,Map,Done support
-```
+**Adaptive research without an unbounded agent loop.** The Orchestrator uses
+coverage and near-field quality to choose whether to search broadly, investigate
+nearby competitors, fill gaps, or stop. It does not approve every product.
+Code-enforced wave, time, and concurrency limits constrain those decisions, so
+model autonomy does not remove execution limits.
 
-Solid arrows show work and data handoffs; dotted arrows show feedback and hard
-constraints. These handoffs are coordinated by the runtime rather than free-form
-agent conversations. The Orchestrator chooses research direction from aggregate
-metrics; admitted candidates continue through intelligence and map updates
-without per-candidate approval.
+**Parallelism at two levels, with incremental delivery.** Independent research
+queries run concurrently. Multiple admitted candidates can be analyzed in
+flight, and each candidate has parallel structured-fact and semantic-positioning
+paths. A finished product can reach the map while other work continues; there is
+no whole-market analysis barrier. Successful branches and partial profiles remain
+useful when another path fails.
+
+**Models interpret evidence; code owns the map.** Models help explain what a
+product does and why it matters. Deterministic services own validation, profile
+fusion, similarity, coordinates, and Focus Ring selection. Existing nodes stay
+fixed as new products arrive. This boundary keeps model-generated prose from
+silently changing the geometry users are already exploring.
+
+**Render first, synthesize when meaning changes.** In the local optimization,
+every profile still receives deterministic presentation metadata and a map delta.
+The runtime emits that delta before requesting a model-backed milestone summary.
+Presentation turns are stateless, avoiding accumulated conversation history and
+repeated full-market synthesis for every new node. The first useful map does not
+wait for that summary; later event consumption can still pause during synthesis.
+
+**Evidence survives the handoffs.** Typed profiles carry source references,
+confidence, and missing information into details and comparisons. The interface
+can show supported facts without presenting incomplete analysis as certainty.
+Comparison reuses the current market model instead of starting another research
+cycle.
 
 ### Agent responsibilities
 
